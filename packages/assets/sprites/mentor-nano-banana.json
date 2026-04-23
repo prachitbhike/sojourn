@@ -1,0 +1,30 @@
+{
+  "personaId": "mentor-aurora",
+  "texture": "packages/assets/sprites/mentor-nano-banana.png",
+  "frameSize": {
+    "width": 128,
+    "height": 128
+  },
+  "animations": {
+    "idle": {
+      "startFrame": 0,
+      "endFrame": 3,
+      "frameRate": 6,
+      "loop": true,
+      "frameCount": 4
+    },
+    "talk": {
+      "startFrame": 4,
+      "endFrame": 7,
+      "frameRate": 10,
+      "loop": true,
+      "frameCount": 4
+    }
+  },
+  "lighting": {
+    "primaryAngleDegrees": -35,
+    "technique": "procedural-soft-highlight",
+    "notes": "Highlight sweeps subtly across frames to increase perceived depth."
+  },
+  "generatedAt": "2026-04-23T23:31:39.003552+00:00"
+}
