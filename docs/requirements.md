@@ -43,7 +43,25 @@ Primary journey:
 - Clarify export targets beyond Phaser (e.g., JSON schema for other engines?).
 - Determine hosting stack (static site vs. server-rendered) for final deployment.
 
-## Next Deliverables
-- Prompt template library & art guidelines (Step 2).
-- Animation atlas specification and tooling plan (Step 3).
-- System architecture diagram for multimodal orchestration (Step 7).
+## MVP Implementation Plan
+1. **Core foundations** — Establish repository structure, shared TypeScript schemas for persona and dialogue turns, and a single end-to-end vertical slice target (one archetype NPC in-browser).
+2. **Persona & dialogue MVP** — Author three lightweight persona JSON templates (mentor, trickster, merchant) with tone notes, guardrails, and catchphrases; deliver a Dialogue Orchestrator stub returning canned responses while logging safety checks.
+3. **Art & animation baseline** — Generate one Nano Banana sprite sheet per persona with idle/talk frames only, then connect to a Phaser state machine that reacts to `talk` versus `idle`.
+4. **Voice path minimal** — Integrate ElevenLabs streaming for one default voice per persona, including captions and a mute fallback whenever the API call fails.
+5. **Browser playground** — Ship a simple React panel that lets creators pick a persona, submit text, and observe synchronized speech plus sprite animation; keep transcripts locally for testing.
+6. **Validation & instrumentation** — Add lightweight latency and safety logging, and run a manual accessibility checklist (captions toggle, keyboard navigation) before expanding scope.
+
+## April 23, 2026 Updates
+- **Dialogue hardening**: Added a pluggable `DialogueGenerator` interface with deterministic randomness injection and accompanying Vitest coverage for generator fallbacks and safety logging.
+- **Persona flavor**: Expanded canned responses per mentor/trickster/merchant archetype to reduce conversational repetition while generator hooks are still stubbed.
+- **Procedural sprites**: Sprite generator now applies soft lighting/ambient occlusion, outputs higher fidelity frames, and writes persona-aligned sprite metadata JSON files.
+- **Voice polish**: Playground exposes playback speed (0.75–1.5×) and volume sliders, and surfaces a mute-state banner whenever ElevenLabs falls back to captions-only.
+- **Metrics export**: Instrumentation keeps recent history in-memory and maintains a JSONL buffer that can be downloaded directly from the playground.
+
+### Decisions
+- LLM integration will pursue a streaming generator so animation and forthcoming voice buffers can stay aligned.
+- JSONL metrics export remains a local-first artifact; we will accumulate requirements for a lightweight ingestion hook (e.g., CLI uploader or background sync) once sharing beyond local dev is needed.
+
+### Follow-up Questions
+1. Do we want persona definitions to reference the generated sprite metadata directly, or keep metadata as a tooling artifact?
+2. What additional animation states (walk/emotes) should the procedural generator target next to match design goals?
