@@ -61,7 +61,8 @@ Primary journey:
 ### Decisions
 - LLM integration will pursue a streaming generator so animation and forthcoming voice buffers can stay aligned.
 - JSONL metrics export remains a local-first artifact; we will accumulate requirements for a lightweight ingestion hook (e.g., CLI uploader or background sync) once sharing beyond local dev is needed.
+- Persona definitions now ingest the generated sprite metadata directly, avoiding duplicate animation bookkeeping across clients.
+- Procedural animation scope stays intentionally narrow: four-direction walk loops and the existing talk visemes until additional emotes are prioritized.
 
 ### Follow-up Questions
-1. Do we want persona definitions to reference the generated sprite metadata directly, or keep metadata as a tooling artifact?
-2. What additional animation states (walk/emotes) should the procedural generator target next to match design goals?
+1. When we expand beyond walk/talk, which emote or movement set should the procedural generator tackle next?
