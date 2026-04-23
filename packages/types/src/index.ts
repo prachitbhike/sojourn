@@ -17,18 +17,6 @@ export interface PersonaVoiceProfile {
   readonly captionLocale: string;
 }
 
-export interface PersonaVisualProfile {
-  readonly spriteSheetPath: string;
-  readonly frameDimensions: {
-    readonly width: number;
-    readonly height: number;
-  };
-  readonly animations: {
-    readonly idle: SpriteAnimationConfig;
-    readonly talk: SpriteAnimationConfig;
-  };
-}
-
 export interface SpriteAnimationConfig {
   readonly startFrame: number;
   readonly endFrame: number;
@@ -53,12 +41,30 @@ export interface SpriteSheetMetadata {
     readonly width: number;
     readonly height: number;
   };
-  readonly animations: {
-    readonly idle: SpriteAnimationMetadata;
-    readonly talk: SpriteAnimationMetadata;
-  };
+  readonly animations: Record<string, SpriteAnimationMetadata>;
   readonly lighting: SpriteLightingMetadata;
   readonly generatedAt: string;
+}
+
+export interface PersonaWalkAnimationSet {
+  readonly up: SpriteAnimationConfig;
+  readonly down: SpriteAnimationConfig;
+  readonly left: SpriteAnimationConfig;
+  readonly right: SpriteAnimationConfig;
+}
+
+export interface PersonaVisualProfile {
+  readonly spriteSheetPath: string;
+  readonly frameDimensions: {
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly animations: {
+    readonly idle: SpriteAnimationConfig;
+    readonly talk: SpriteAnimationConfig;
+    readonly walk?: PersonaWalkAnimationSet;
+  };
+  readonly metadata?: SpriteSheetMetadata;
 }
 
 export interface PersonaDefinition {

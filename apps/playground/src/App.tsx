@@ -53,36 +53,13 @@ export default function App() {
 
   const selectedPersonaData = useMemo(() => {
     const persona = personas.find((entry) => entry.id === selectedPersonaId) ?? personas[0];
-    const manifestEntry = spriteManifest[persona.id];
-    const spriteUrl = manifestEntry?.texture ?? persona.visual.spriteSheetPath;
+    const spriteUrl = spriteManifest[persona.id] ?? persona.visual.spriteSheetPath;
 
     const resolvedPersona: PersonaDefinition = {
       ...persona,
       visual: {
         ...persona.visual,
-        spriteSheetPath: spriteUrl,
-        frameDimensions: manifestEntry
-          ? {
-              width: manifestEntry.metadata.frameSize.width,
-              height: manifestEntry.metadata.frameSize.height
-            }
-          : persona.visual.frameDimensions,
-        animations: manifestEntry
-          ? {
-              idle: {
-                startFrame: manifestEntry.metadata.animations.idle.startFrame,
-                endFrame: manifestEntry.metadata.animations.idle.endFrame,
-                frameRate: manifestEntry.metadata.animations.idle.frameRate,
-                loop: manifestEntry.metadata.animations.idle.loop
-              },
-              talk: {
-                startFrame: manifestEntry.metadata.animations.talk.startFrame,
-                endFrame: manifestEntry.metadata.animations.talk.endFrame,
-                frameRate: manifestEntry.metadata.animations.talk.frameRate,
-                loop: manifestEntry.metadata.animations.talk.loop
-              }
-            }
-          : persona.visual.animations
+        spriteSheetPath: spriteUrl
       }
     };
 

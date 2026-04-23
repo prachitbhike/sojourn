@@ -19,6 +19,34 @@
       "frameRate": 10,
       "loop": true,
       "frameCount": 4
+    },
+    "walkDown": {
+      "startFrame": 8,
+      "endFrame": 11,
+      "frameRate": 6,
+      "loop": true,
+      "frameCount": 4
+    },
+    "walkUp": {
+      "startFrame": 12,
+      "endFrame": 15,
+      "frameRate": 6,
+      "loop": true,
+      "frameCount": 4
+    },
+    "walkLeft": {
+      "startFrame": 16,
+      "endFrame": 19,
+      "frameRate": 6,
+      "loop": true,
+      "frameCount": 4
+    },
+    "walkRight": {
+      "startFrame": 20,
+      "endFrame": 23,
+      "frameRate": 6,
+      "loop": true,
+      "frameCount": 4
     }
   },
   "lighting": {
@@ -26,5 +54,5 @@
     "technique": "procedural-soft-highlight",
     "notes": "Highlight sweeps subtly across frames to increase perceived depth."
   },
-  "generatedAt": "2026-04-23T23:31:39.012972+00:00"
+  "generatedAt": "2026-04-23T23:48:44.498379+00:00"
 }
