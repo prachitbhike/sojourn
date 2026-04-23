@@ -1,0 +1,23 @@
+{
+  "name": "@npc-creator/phaser-runtime",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@npc-creator/types": "workspace:*",
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5"
+  }
+}
