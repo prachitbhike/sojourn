@@ -4,8 +4,12 @@ export type {
   SynthesisRequest,
   StreamingSynthesisRequest,
   StreamingTextSource,
-  TextSynthesisRequest,
-  SynthesisResult
+  SynthesisResult,
+  TextSynthesisRequest
 } from "./elevenLabsClient";
-export { generateCaptionTrack, createCaptionTrackFromSegments, renderCaptionVtt } from "./captions";
+export {
+  generateCaptionTrack,
+  createCaptionTrackFromSegments,
+  renderCaptionVtt
+} from "./captions";
 export type { CaptionSegment, CaptionTrack } from "./captions";

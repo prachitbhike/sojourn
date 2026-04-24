@@ -168,7 +168,11 @@ export class DialogueOrchestrator {
 
       const handler = this.onStreamChunk;
       if (handler) {
-        await handler(event);
+        try {
+          await handler(event);
+        } catch (error) {
+          this.warn?.("[dialogue] Stream chunk handler threw.", error);
+        }
       }
     };
 

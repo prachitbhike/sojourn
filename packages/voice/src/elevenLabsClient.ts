@@ -134,67 +134,88 @@ export class ElevenLabsClient {
     request: StreamingSynthesisRequest
   ): Promise<SynthesisResult> {
     const language = resolveCaptionLanguage(request.persona);
+
     const aggregatedParts: string[] = [];
     const captionSegments: CaptionSegment[] = [];
-    const pendingCaptionQueue: CaptionSegment[] = [];
-    let captionController: ReadableStreamDefaultController<CaptionSegment> | null = null;
+    const pendingCaptionSegments: CaptionSegment[] = [];
+    let captionController: any = null;
 
     const emitCaption = (segment: CaptionSegment) => {
       if (captionController) {
         captionController.enqueue(segment);
       } else {
-        pendingCaptionQueue.push(segment);
+        pendingCaptionSegments.push(segment);
       }
     };
 
     const captionStream = new ReadableStream<CaptionSegment>({
       start(controller) {
         captionController = controller;
-        while (pendingCaptionQueue.length > 0) {
-          controller.enqueue(pendingCaptionQueue.shift()!);
+        while (pendingCaptionSegments.length > 0) {
+          captionController.enqueue(pendingCaptionSegments.shift()!);
         }
+      },
+      cancel() {
+        captionController = null;
+        pendingCaptionSegments.length = 0;
       }
     });
 
     const segmentIterator = streamTextSegments(request.textStream);
-    const firstSegment = await segmentIterator.next();
+    const first = await segmentIterator.next();
 
-    if (firstSegment.done) {
-      const captions = createCaptionTrackFromSegments(language, captionSegments);
-      captionController?.close();
-      return { captions, captionStream, muted: true };
+    if (first.done) {
+      const emptyTrack = createCaptionTrackFromSegments(language, captionSegments);
+      const controllerRef = captionController;
+      if (controllerRef) {
+        controllerRef.close();
+      }
+      captionController = null;
+      return {
+        captions: emptyTrack,
+        captionStream,
+        muted: true
+      };
     }
 
-    const firstText = firstSegment.value.trim();
-    if (!firstText) {
+    const firstChunkText = first.value.trim();
+    if (!firstChunkText) {
       await collectRemainingSegments(segmentIterator, aggregatedParts);
-      const captions = generateCaptionTrack(
+      const fallbackCaptions = generateCaptionTrack(
         { text: aggregatedParts.join(" ") },
         language
       );
-      captionController?.close();
-      return { captions, captionStream, muted: true };
+      const controllerRef = captionController;
+      if (controllerRef) {
+        controllerRef.close();
+      }
+      captionController = null;
+      return { captions: fallbackCaptions, captionStream, muted: true };
     }
 
-    aggregatedParts.push(firstText);
+    aggregatedParts.push(firstChunkText);
 
     const firstResult = await this.synthesizeImmediate({
       persona: request.persona,
-      text: firstText,
+      text: firstChunkText,
       responseMetadata: request.responseMetadata,
       signal: request.signal
     });
 
     if (firstResult.muted || !firstResult.audioStream) {
-      this.logger.warn("[voice] Streaming synthesis aborted at first chunk; using mute fallback.");
+      this.logger.warn("[voice] Streaming synthesis failed on first chunk; using mute fallback.");
       await collectRemainingSegments(segmentIterator, aggregatedParts);
-      const captions = generateCaptionTrack(
+      const fallbackCaptions = generateCaptionTrack(
         { text: aggregatedParts.join(" ") },
         language
       );
-      captionController?.close();
+      const controllerRef = captionController;
+      if (controllerRef) {
+        controllerRef.close();
+      }
+      captionController = null;
       return {
-        captions,
+        captions: fallbackCaptions,
         captionStream,
         muted: true,
         error: firstResult.error
@@ -212,18 +233,19 @@ export class ElevenLabsClient {
       }
     });
 
-    let resultRef: SynthesisResult;
+    let resultRef: SynthesisResult | undefined;
 
     const audioStream = new ReadableStream<Uint8Array>({
       start: async (controller) => {
         try {
           await pipeAudioStream(firstResult.audioStream!, controller);
 
-          for await (const nextSegment of segmentIterator) {
-            const trimmed = nextSegment.trim();
+          for await (const segmentText of segmentIterator) {
+            const trimmed = segmentText.trim();
             if (!trimmed) {
               continue;
             }
+
             aggregatedParts.push(trimmed);
 
             const chunkResult = await this.synthesizeImmediate({
@@ -234,7 +256,7 @@ export class ElevenLabsClient {
             });
 
             if (chunkResult.muted || !chunkResult.audioStream) {
-              throw chunkResult.error ?? new Error("Streaming synthesis chunk failed.");
+              throw chunkResult.error ?? new Error("Streaming chunk synthesis failed.");
             }
 
             captionOffset = appendCaptionSegments({
@@ -252,23 +274,34 @@ export class ElevenLabsClient {
 
           captionTrack.vtt = renderCaptionVtt(captionSegments);
           controller.close();
-          captionController?.close();
+          const controllerRef = captionController;
+          if (controllerRef) {
+            controllerRef.close();
+          }
+          captionController = null;
         } catch (error) {
           const failure = error instanceof Error ? error : new Error(String(error));
           this.logger.warn(
-            "[voice] Streaming synthesis interrupted. Switching to mute fallback.",
+            "[voice] Streaming synthesis interrupted. Switching to muted captions.",
             failure
           );
-          captionController?.error?.(failure);
-          controller.error(failure);
+          const fallbackCaptions = generateCaptionTrack(
+            { text: aggregatedParts.join(" ") },
+            language
+          );
+          const controllerRef = captionController;
+          if (controllerRef) {
+            controllerRef.close();
+          }
+          captionController = null;
+          controller.close();
+
           if (resultRef) {
-            resultRef.error = failure;
-            resultRef.muted = true;
             resultRef.audioStream = undefined;
-            resultRef.captions = generateCaptionTrack(
-              { text: aggregatedParts.join(" ") },
-              language
-            );
+            resultRef.captions = fallbackCaptions;
+            resultRef.captionStream = undefined;
+            resultRef.muted = true;
+            resultRef.error = failure;
           }
         }
       }
@@ -282,6 +315,7 @@ export class ElevenLabsClient {
     };
 
     resultRef = result;
+
     return result;
   }
 }
@@ -301,6 +335,7 @@ async function pipeAudioStream(
   controller: ReadableStreamDefaultController<Uint8Array>
 ): Promise<void> {
   const reader = stream.getReader();
+
   try {
     while (true) {
       const chunk = await reader.read();
@@ -357,16 +392,18 @@ function toAsyncIterable(source: StreamingTextSource): AsyncIterable<string> {
   return {
     async *[Symbol.asyncIterator]() {
       const reader = stream.getReader();
+      const decoder = new TextDecoder();
+
       try {
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) {
             break;
           }
-          if (typeof chunk.value === "string") {
+          if (chunk.value instanceof Uint8Array) {
+            yield decoder.decode(chunk.value, { stream: true });
+          } else {
             yield chunk.value;
-          } else if (chunk.value instanceof Uint8Array) {
-            yield new TextDecoder().decode(chunk.value);
           }
         }
       } finally {

@@ -122,6 +122,7 @@ describe("DialogueOrchestrator", () => {
     );
     expect(result.response.metadata?.responseSource).toBe("canned");
     expect(result.response.metadata?.canned).toBe(true);
+    expect(result.response.metadata?.streamChunkCount).toBe(1);
     expect(trackedChunks).toHaveLength(1);
     expect(trackedChunks[0]?.value).toBe(result.response.text);
     expect(trackedChunks[0]?.index).toBe(0);

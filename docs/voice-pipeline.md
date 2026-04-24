@@ -52,3 +52,8 @@
 - Expose REST/WebSocket API to browser clients (`/speak` endpoint).
 - Implement client-side audio player that handles jitter buffer, time stretching for lip-sync.
 - Write integration tests mocking ElevenLabs WebSocket responses.
+
+## Voice Package API (packages/voice)
+- `ElevenLabsClient.synthesize` now accepts either a `text` string or a streaming source (`textStream`) that yields partial dialogue chunks.
+- Streaming calls return a `ReadableStream<Uint8Array>` for audio and expose incremental captions via `captionStream`, while `captions` continues to surface the accumulated track.
+- On transport or synthesis failure the client automatically degrades to the mute-with-captions fallback, matching the non-streaming safeguards.
