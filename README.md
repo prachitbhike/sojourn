@@ -97,6 +97,7 @@ Key references are collected in `/Users/prachitbhike/Code/npc-creator/docs`:
 - `/Users/prachitbhike/Code/npc-creator/docs/phaser-integration.md` – Guidance for embedding the Phaser runtime and managing animation state.
 - `/Users/prachitbhike/Code/npc-creator/docs/accessibility-checklist.md` – WCAG 2.1 AA compliance checklist for the authoring and playback flows.
 - `/Users/prachitbhike/Code/npc-creator/docs/playground-metrics-cli.md` – Metrics export workflow and CLI usage reference.
+- `/Users/prachitbhike/Code/npc-creator/docs/llm-development-guide.md` – Checklist and quickstart tailored for LLM-based contributors.
 
 Additional documents detail art pipelines, testing strategy, and tooling expectations for collaborators.
 
@@ -113,8 +114,9 @@ Review the open questions at the end of the requirements document before proposi
 ## Contributing
 
 1. Branch from the main repository.
-2. Use pnpm for dependency management and avoid mixing npm or yarn.
-3. Run `pnpm lint`, `pnpm typecheck`, and relevant package level tests before proposing changes.
-4. Document new developer workflows in `/Users/prachitbhike/Code/npc-creator/docs` and update this README when the project structure evolves.
+2. Review `/Users/prachitbhike/Code/npc-creator/AGENTS.md` for repository-wide conventions.
+3. Use pnpm for dependency management and avoid mixing npm or yarn.
+4. Run `pnpm lint`, `pnpm typecheck`, and relevant package level tests before proposing changes.
+5. Document new developer workflows in `/Users/prachitbhike/Code/npc-creator/docs` (including `/Users/prachitbhike/Code/npc-creator/docs/llm-development-guide.md`) and update this README when the project structure evolves.
 
 For questions or design proposals, start with the documentation listed above so new work continues to align with accessibility, safety, and latency goals.

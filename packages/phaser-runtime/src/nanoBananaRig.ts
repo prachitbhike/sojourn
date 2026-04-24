@@ -78,6 +78,10 @@ export class NanoBananaRig {
     this.updateAnimation();
   }
 
+  public getSprite(): Phaser.GameObjects.Sprite {
+    return this.sprite;
+  }
+
   public destroy(): void {
     this.sprite.destroy();
   }

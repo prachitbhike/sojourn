@@ -25,6 +25,7 @@ export declare class NanoBananaRig {
     constructor(options: NanoBananaRigOptions);
     setTalking(isTalking: boolean): void;
     setDirection(direction: RigDirection): void;
+    getSprite(): Phaser.GameObjects.Sprite;
     destroy(): void;
     private updateAnimation;
     private resolveAnimationKey;

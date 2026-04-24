@@ -7,7 +7,8 @@
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "mock:pipeline": "node ./scripts/mock-sprite-pipeline.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

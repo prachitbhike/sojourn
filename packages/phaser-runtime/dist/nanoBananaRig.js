@@ -93,6 +93,9 @@ export class NanoBananaRig {
         this.currentDirection = resolvedDirection;
         this.updateAnimation();
     }
+    getSprite() {
+        return this.sprite;
+    }
     destroy() {
         this.sprite.destroy();
     }

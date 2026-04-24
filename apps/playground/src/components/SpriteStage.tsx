@@ -4,22 +4,28 @@ import Phaser from "phaser";
 import type { PersonaDefinition } from "@npc-creator/types";
 import { NanoBananaRig } from "@npc-creator/phaser-runtime";
 
-type RigDirection = "idle" | "up" | "down" | "left" | "right";
+export type RigDirection = "idle" | "up" | "down" | "left" | "right";
 
 interface SpriteStageProps {
   readonly persona: PersonaDefinition;
   readonly spriteUrl: string;
   readonly talking: boolean;
   readonly direction: RigDirection;
+  readonly movement: { readonly x: number; readonly y: number };
 }
 
-export function SpriteStage({ persona, spriteUrl, talking, direction }: SpriteStageProps) {
+const STAGE_WIDTH = 384;
+const STAGE_HEIGHT = 384;
+const MOVEMENT_SPEED = 140; // pixels per second
+const BOUNDS_PADDING = 48;
+
+export function SpriteStage({ persona, spriteUrl, talking, direction, movement }: SpriteStageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const sceneRef = useRef<NPCSpriteScene | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current || gameRef.current) {
+    if (!containerRef.current) {
       return;
     }
 
@@ -29,9 +35,9 @@ export function SpriteStage({ persona, spriteUrl, talking, direction }: SpriteSt
     gameRef.current = new Phaser.Game({
       type: Phaser.AUTO,
       parent: containerRef.current,
-      width: persona.visual.frameDimensions.width,
-      height: persona.visual.frameDimensions.height,
-      backgroundColor: 0x000000,
+      width: STAGE_WIDTH,
+      height: STAGE_HEIGHT,
+      backgroundColor: 0x0f172a,
       transparent: true,
       scene
     });
@@ -41,31 +47,23 @@ export function SpriteStage({ persona, spriteUrl, talking, direction }: SpriteSt
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
-  }, [persona.visual.frameDimensions.height, persona.visual.frameDimensions.width]);
+  }, []);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) {
-      return;
-    }
-    scene.setPersona(persona, spriteUrl);
+    sceneRef.current?.setPersona(persona, spriteUrl);
   }, [persona, spriteUrl]);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) {
-      return;
-    }
-    scene.setTalking(talking);
+    sceneRef.current?.setTalking(talking);
   }, [talking]);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) {
-      return;
-    }
-    scene.setDirection(direction);
+    sceneRef.current?.setDirection(direction);
   }, [direction]);
+
+  useEffect(() => {
+    sceneRef.current?.setMovement(movement);
+  }, [movement]);
 
   return <div className="sprite-stage" ref={containerRef} />;
 }
@@ -76,6 +74,15 @@ class NPCSpriteScene extends Phaser.Scene {
   private spriteUrl: string | null = null;
   private direction: RigDirection = "idle";
   private talking = false;
+  private readonly velocity = new Phaser.Math.Vector2(0, 0);
+  private readonly bounds = new Phaser.Geom.Rectangle(
+    BOUNDS_PADDING,
+    BOUNDS_PADDING,
+    STAGE_WIDTH - BOUNDS_PADDING * 2,
+    STAGE_HEIGHT - BOUNDS_PADDING * 2
+  );
+  private halfWidth = 0;
+  private halfHeight = 0;
 
   preload(): void {
     if (!this.persona || !this.spriteUrl) {
@@ -94,14 +101,41 @@ class NPCSpriteScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.add
+      .rectangle(STAGE_WIDTH / 2, STAGE_HEIGHT / 2, STAGE_WIDTH, STAGE_HEIGHT, 0x111a2b, 0.55)
+      .setStrokeStyle(2, 0x334155, 0.9);
+
     if (this.persona) {
       this.instantiateRig();
     }
   }
 
+  update(_: number, delta: number): void {
+    if (!this.rig || this.velocity.lengthSq() === 0) {
+      return;
+    }
+
+    const sprite = this.rig.getSprite();
+    const deltaSeconds = delta / 1000;
+    const distance = MOVEMENT_SPEED * deltaSeconds;
+
+    sprite.x += this.velocity.x * distance;
+    sprite.y += this.velocity.y * distance;
+
+    const minX = this.bounds.left + this.halfWidth;
+    const maxX = this.bounds.right - this.halfWidth;
+    const minY = this.bounds.top + this.halfHeight;
+    const maxY = this.bounds.bottom - this.halfHeight;
+
+    sprite.x = Phaser.Math.Clamp(sprite.x, minX, maxX);
+    sprite.y = Phaser.Math.Clamp(sprite.y, minY, maxY);
+  }
+
   setPersona(persona: PersonaDefinition, spriteUrl: string): void {
     this.persona = persona;
     this.spriteUrl = spriteUrl;
+    this.halfWidth = persona.visual.frameDimensions.width / 2;
+    this.halfHeight = persona.visual.frameDimensions.height / 2;
 
     if (!this.scene.isActive()) {
       return;
@@ -124,6 +158,10 @@ class NPCSpriteScene extends Phaser.Scene {
     this.rig?.setDirection(direction);
   }
 
+  setMovement(movement: { readonly x: number; readonly y: number }): void {
+    this.velocity.set(movement.x, movement.y);
+  }
+
   private instantiateRig(): void {
     if (!this.persona) {
       return;
@@ -135,8 +173,8 @@ class NPCSpriteScene extends Phaser.Scene {
       scene: this,
       persona: this.persona,
       textureKey: this.getTextureKey(),
-      x: this.persona.visual.frameDimensions.width / 2,
-      y: this.persona.visual.frameDimensions.height / 2,
+      x: STAGE_WIDTH / 2,
+      y: STAGE_HEIGHT / 2,
       scale: 1.6
     });
 

@@ -111,8 +111,6 @@ function buildPersona(
 
 function resolveAnimations(metadata: SpriteSheetMetadata): PersonaVisualProfile["animations"] {
   const idle = toAnimation(metadata, "idle");
-  const talk = toAnimation(metadata, "talk") ?? idle;
-
   const walkUp = toAnimation(metadata, "walkUp");
   const walkDown = toAnimation(metadata, "walkDown");
   const walkLeft = toAnimation(metadata, "walkLeft");
@@ -130,6 +128,8 @@ function resolveAnimations(metadata: SpriteSheetMetadata): PersonaVisualProfile[
   if (!idle) {
     throw new Error("Sprite metadata did not include an idle animation block.");
   }
+
+  const talk = toAnimation(metadata, "talk") ?? idle;
 
   return {
     idle,
