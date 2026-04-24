@@ -8,8 +8,8 @@ export interface CaptionSegment {
 
 export interface CaptionTrack {
   readonly language: string;
-  readonly segments: readonly CaptionSegment[];
-  readonly vtt: string;
+  segments: CaptionSegment[];
+  vtt: string;
 }
 
 export function generateCaptionTrack(
@@ -47,6 +47,21 @@ export function generateCaptionTrack(
     language,
     segments,
     vtt
+  };
+}
+
+export function renderCaptionVtt(segments: readonly CaptionSegment[]): string {
+  return buildWebVtt(segments);
+}
+
+export function createCaptionTrackFromSegments(
+  language: string,
+  segments: CaptionSegment[]
+): CaptionTrack {
+  return {
+    language,
+    segments,
+    vtt: renderCaptionVtt(segments)
   };
 }
 

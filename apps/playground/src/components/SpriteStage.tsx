@@ -4,13 +4,16 @@ import Phaser from "phaser";
 import type { PersonaDefinition } from "@npc-creator/types";
 import { NanoBananaRig } from "@npc-creator/phaser-runtime";
 
+type RigDirection = "idle" | "up" | "down" | "left" | "right";
+
 interface SpriteStageProps {
   readonly persona: PersonaDefinition;
   readonly spriteUrl: string;
   readonly talking: boolean;
+  readonly direction: RigDirection;
 }
 
-export function SpriteStage({ persona, spriteUrl, talking }: SpriteStageProps) {
+export function SpriteStage({ persona, spriteUrl, talking, direction }: SpriteStageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const sceneRef = useRef<NPCSpriteScene | null>(null);
@@ -56,6 +59,14 @@ export function SpriteStage({ persona, spriteUrl, talking }: SpriteStageProps) {
     scene.setTalking(talking);
   }, [talking]);
 
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+    scene.setDirection(direction);
+  }, [direction]);
+
   return <div className="sprite-stage" ref={containerRef} />;
 }
 
@@ -63,6 +74,8 @@ class NPCSpriteScene extends Phaser.Scene {
   private rig: NanoBananaRig | null = null;
   private persona: PersonaDefinition | null = null;
   private spriteUrl: string | null = null;
+  private direction: RigDirection = "idle";
+  private talking = false;
 
   preload(): void {
     if (!this.persona || !this.spriteUrl) {
@@ -102,7 +115,13 @@ class NPCSpriteScene extends Phaser.Scene {
   }
 
   setTalking(isTalking: boolean): void {
+    this.talking = isTalking;
     this.rig?.setTalking(isTalking);
+  }
+
+  setDirection(direction: RigDirection): void {
+    this.direction = direction;
+    this.rig?.setDirection(direction);
   }
 
   private instantiateRig(): void {
@@ -120,6 +139,9 @@ class NPCSpriteScene extends Phaser.Scene {
       y: this.persona.visual.frameDimensions.height / 2,
       scale: 1.6
     });
+
+    this.rig.setDirection(this.direction);
+    this.rig.setTalking(this.talking);
   }
 
   private getTextureKey(): string {

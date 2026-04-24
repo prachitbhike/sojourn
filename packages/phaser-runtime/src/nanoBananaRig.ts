@@ -2,6 +2,9 @@ import Phaser from "phaser";
 
 import type { PersonaDefinition } from "@npc-creator/types";
 
+type WalkDirection = "up" | "down" | "left" | "right";
+type RigDirection = WalkDirection | "idle";
+
 export interface NanoBananaRigOptions {
   readonly scene: Phaser.Scene;
   readonly persona: PersonaDefinition;
@@ -18,8 +21,11 @@ export class NanoBananaRig {
   private readonly textureKey: string;
   private readonly idleKey: string;
   private readonly talkKey: string;
+  private readonly walkKeys?: Record<WalkDirection, string>;
   private readonly sprite: Phaser.GameObjects.Sprite;
-  private currentState: "idle" | "talk" = "idle";
+  private currentDirection: RigDirection = "idle";
+  private isTalking = false;
+  private currentAnimationKey: string;
 
   constructor(options: NanoBananaRigOptions) {
     this.scene = options.scene;
@@ -28,7 +34,13 @@ export class NanoBananaRig {
     this.idleKey = `${this.textureKey}-idle`;
     this.talkKey = `${this.textureKey}-talk`;
 
-    ensureAnimations(this.scene, this.persona, this.textureKey, this.idleKey, this.talkKey);
+    this.walkKeys = ensureAnimations(
+      this.scene,
+      this.persona,
+      this.textureKey,
+      this.idleKey,
+      this.talkKey
+    );
 
     const { frameDimensions } = this.persona.visual;
     const x = options.x ?? frameDimensions.width / 2;
@@ -39,21 +51,58 @@ export class NanoBananaRig {
       .setDepth(options.depth ?? 0)
       .setScale(options.scale ?? 1.6)
       .play(this.idleKey);
+
+    this.currentAnimationKey = this.idleKey;
   }
 
   public setTalking(isTalking: boolean): void {
-    const targetState: "idle" | "talk" = isTalking ? "talk" : "idle";
-    if (targetState === this.currentState) {
+    if (this.isTalking === isTalking) {
       return;
     }
 
-    const nextAnimationKey = targetState === "talk" ? this.talkKey : this.idleKey;
-    this.sprite.play(nextAnimationKey, true);
-    this.currentState = targetState;
+    this.isTalking = isTalking;
+    this.updateAnimation();
+  }
+
+  public setDirection(direction: RigDirection): void {
+    const resolvedDirection: RigDirection =
+      direction === "idle" || !this.walkKeys || !this.walkKeys[direction as WalkDirection]
+        ? "idle"
+        : (direction as WalkDirection);
+
+    if (this.currentDirection === resolvedDirection) {
+      return;
+    }
+
+    this.currentDirection = resolvedDirection;
+    this.updateAnimation();
   }
 
   public destroy(): void {
     this.sprite.destroy();
+  }
+
+  private updateAnimation(): void {
+    const nextKey = this.resolveAnimationKey();
+    if (nextKey === this.currentAnimationKey) {
+      return;
+    }
+
+    this.sprite.play(nextKey, true);
+    this.currentAnimationKey = nextKey;
+  }
+
+  private resolveAnimationKey(): string {
+    if (this.isTalking) {
+      return this.talkKey;
+    }
+
+    if (this.currentDirection === "idle" || !this.walkKeys) {
+      return this.idleKey;
+    }
+
+    const walkKey = this.walkKeys[this.currentDirection];
+    return walkKey ?? this.idleKey;
   }
 }
 
@@ -88,7 +137,7 @@ function ensureAnimations(
   textureKey: string,
   idleKey: string,
   talkKey: string
-) {
+): Record<WalkDirection, string> | undefined {
   if (!preparedAnimations.has(idleKey)) {
     scene.anims.create({
       key: idleKey,
@@ -114,6 +163,40 @@ function ensureAnimations(
     });
     preparedAnimations.add(talkKey);
   }
+
+  const walkConfig = persona.visual.animations.walk;
+  if (!walkConfig) {
+    return undefined;
+  }
+
+  const walkKeys: Record<WalkDirection, string> = {
+    up: `${textureKey}-walk-up`,
+    down: `${textureKey}-walk-down`,
+    left: `${textureKey}-walk-left`,
+    right: `${textureKey}-walk-right`
+  };
+
+  (Object.keys(walkKeys) as WalkDirection[]).forEach((direction) => {
+    const animationKey = walkKeys[direction];
+    if (preparedAnimations.has(animationKey)) {
+      return;
+    }
+
+    const config = walkConfig[direction];
+    scene.anims.create({
+      key: animationKey,
+      frames: scene.anims.generateFrameNumbers(textureKey, {
+        start: config.startFrame,
+        end: config.endFrame
+      }),
+      frameRate: config.frameRate,
+      repeat: config.loop ? -1 : 0
+    });
+
+    preparedAnimations.add(animationKey);
+  });
+
+  return walkKeys;
 }
 
 function personaTextureKey(persona: PersonaDefinition): string {

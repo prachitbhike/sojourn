@@ -18,6 +18,18 @@ import { spriteManifest } from "./spriteManifest";
 
 const personas = getAllPersonas();
 
+type RigDirection = "idle" | "up" | "down" | "left" | "right";
+
+const directionOptions: RigDirection[] = ["idle", "up", "down", "left", "right"];
+
+const directionLabels: Record<RigDirection, string> = {
+  idle: "Idle",
+  up: "Walk Up",
+  down: "Walk Down",
+  left: "Walk Left",
+  right: "Walk Right"
+};
+
 const conversationPrefix = "local-playground";
 
 export default function App() {
@@ -42,6 +54,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [talking, setTalking] = useState(false);
+  const [direction, setDirection] = useState<RigDirection>("idle");
   const [captionTrack, setCaptionTrack] = useState<SynthesisResult["captions"] | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -68,6 +81,8 @@ export default function App() {
       spriteUrl
     };
   }, [selectedPersonaId]);
+
+  const hasWalkAnimations = Boolean(selectedPersonaData.persona.visual.animations.walk);
 
   useEffect(() => {
     return () => {
@@ -105,6 +120,7 @@ export default function App() {
   useEffect(() => {
     setCaptionTrack(null);
     setTalking(false);
+    setDirection("idle");
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -372,6 +388,7 @@ export default function App() {
             persona={selectedPersonaData.persona}
             spriteUrl={selectedPersonaData.spriteUrl}
             talking={talking}
+            direction={direction}
           />
           {captionTrack && captionsEnabled ? (
             <div className="captions">
@@ -379,6 +396,29 @@ export default function App() {
                 <p key={idx}>{segment.text}</p>
               ))}
             </div>
+          ) : null}
+        </div>
+
+        <div className="animation-controls">
+          <h3>Animation Preview</h3>
+          <div className="direction-buttons">
+            {directionOptions.map((option) => {
+              const disabled = option !== "idle" && !hasWalkAnimations;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={option === direction ? "selected" : ""}
+                  disabled={disabled}
+                  onClick={() => setDirection(option)}
+                >
+                  {directionLabels[option]}
+                </button>
+              );
+            })}
+          </div>
+          {!hasWalkAnimations ? (
+            <p className="animation-controls-hint">Walk animations unavailable for this persona.</p>
           ) : null}
         </div>
 

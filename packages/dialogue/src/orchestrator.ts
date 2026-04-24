@@ -18,8 +18,23 @@ export interface DialogueResponseDraft {
   readonly source?: string;
 }
 
+export interface DialogueStreamEvent {
+  readonly conversationId: string;
+  readonly personaId: string;
+  readonly turnId: string;
+  readonly index: number;
+  readonly value: string;
+}
+
+export type DialogueStreamEmitter = (chunk: string) => Promise<void> | void;
+
+export type DialogueStreamChunkHandler = (event: DialogueStreamEvent) => Promise<void> | void;
+
 export interface DialogueGenerator {
-  generate(context: DialogueGenerationContext): Promise<DialogueResponseDraft | null>;
+  generate(
+    context: DialogueGenerationContext,
+    emitChunk?: DialogueStreamEmitter
+  ): Promise<DialogueResponseDraft | null>;
 }
 
 type PersonaLookup = Readonly<Record<string, PersonaDefinition>>;
@@ -87,6 +102,7 @@ export interface DialogueOrchestratorOptions {
   readonly warn?: typeof console.warn;
   readonly random?: () => number;
   readonly generators?: readonly DialogueGenerator[];
+  readonly onStreamChunk?: DialogueStreamChunkHandler;
 }
 
 export class DialogueOrchestrator {
@@ -96,6 +112,7 @@ export class DialogueOrchestrator {
   private readonly warn: typeof console.warn;
   private readonly random: () => number;
   private readonly generators: readonly DialogueGenerator[];
+  private readonly onStreamChunk?: DialogueStreamChunkHandler;
 
   constructor(options: DialogueOrchestratorOptions) {
     this.personaMap = options.personas.reduce((acc, persona) => {
@@ -107,6 +124,7 @@ export class DialogueOrchestrator {
     this.warn = options.warn ?? console.warn;
     this.random = options.random ?? Math.random;
     this.generators = options.generators ?? [];
+    this.onStreamChunk = options.onStreamChunk;
   }
 
   async respond(request: DialogueRequest): Promise<DialogueOrchestratorResult> {
@@ -131,12 +149,39 @@ export class DialogueOrchestrator {
       persona
     };
 
-    const generatorResult = await this.runGenerators(context);
+    let streamIndex = 0;
+    let emittedChunkCount = 0;
+    const emitStreamChunk: DialogueStreamEmitter = async (value) => {
+      if (typeof value !== "string" || value.length === 0) {
+        return;
+      }
+
+      const event: DialogueStreamEvent = {
+        conversationId: request.conversationId,
+        personaId: request.personaId,
+        turnId: request.turnId,
+        index: streamIndex++,
+        value
+      };
+
+      emittedChunkCount += 1;
+
+      const handler = this.onStreamChunk;
+      if (handler) {
+        await handler(event);
+      }
+    };
+
+    const generatorResult = await this.runGenerators(context, emitStreamChunk);
     const usedGenerator = generatorResult !== null;
 
     const text = usedGenerator
       ? generatorResult.text
       : selectResponse(persona, this.random);
+
+    if (text && emittedChunkCount === 0) {
+      await emitStreamChunk(text);
+    }
 
     const latencyMs = Math.max(this.clock() - start, 16);
 
@@ -146,7 +191,8 @@ export class DialogueOrchestrator {
       canned: generatorResult?.source
         ? generatorResult.source === "canned"
         : !usedGenerator,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      streamChunkCount: emittedChunkCount
     };
 
     const catchphrase = randomCatchphrase(persona, this.random);
@@ -179,11 +225,12 @@ export class DialogueOrchestrator {
   }
 
   private async runGenerators(
-    context: DialogueGenerationContext
+    context: DialogueGenerationContext,
+    emitChunk: DialogueStreamEmitter
   ): Promise<DialogueResponseDraft | null> {
     for (const generator of this.generators) {
       try {
-        const result = await generator.generate(context);
+        const result = await generator.generate(context, emitChunk);
         if (result && typeof result.text === "string" && result.text.trim().length > 0) {
           return result;
         }

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { DialogueGenerator } from "../orchestrator";
-import { DialogueOrchestrator } from "../orchestrator";
+import {
+  DialogueOrchestrator,
+  StubStreamingGenerator,
+  type DialogueGenerator,
+  type DialogueStreamEvent
+} from "../index";
 
 const persona = {
   id: "mentor-aurora",
@@ -68,7 +72,36 @@ describe("DialogueOrchestrator", () => {
     expect(generators[0].generate).toHaveBeenCalledTimes(1);
   });
 
+  it("streams chunk events in order", async () => {
+    const observed: DialogueStreamEvent[] = [];
+
+    const orchestrator = new DialogueOrchestrator({
+      personas: [persona],
+      generators: [
+        new StubStreamingGenerator({
+          chunks: ["First ", "Second ", "Third."],
+          chunkDelayMs: 0,
+          source: "stub.streaming.test"
+        })
+      ],
+      onStreamChunk: async (event) => {
+        observed.push(event);
+      }
+    });
+
+    const result = await orchestrator.respond(baseRequest);
+
+    expect(observed.map((entry) => entry.index)).toEqual([0, 1, 2]);
+    expect(observed.map((entry) => entry.value)).toEqual(["First ", "Second ", "Third."]);
+    expect(observed.every((entry) => entry.turnId === baseRequest.turnId)).toBe(true);
+    expect(result.response.text).toBe("First Second Third.");
+    expect(result.response.metadata?.responseSource).toBe("stub.streaming.test");
+    expect(result.response.metadata?.streamChunkCount).toBe(3);
+  });
+
   it("falls back to canned responses when generators miss", async () => {
+    const trackedChunks: DialogueStreamEvent[] = [];
+
     const orchestrator = new DialogueOrchestrator({
       personas: [persona],
       generators: [
@@ -76,7 +109,10 @@ describe("DialogueOrchestrator", () => {
           generate: vi.fn().mockResolvedValue(null)
         }
       ],
-      random: () => 0
+      random: () => 0,
+      onStreamChunk: (event) => {
+        trackedChunks.push(event);
+      }
     });
 
     const result = await orchestrator.respond(baseRequest);
@@ -86,6 +122,9 @@ describe("DialogueOrchestrator", () => {
     );
     expect(result.response.metadata?.responseSource).toBe("canned");
     expect(result.response.metadata?.canned).toBe(true);
+    expect(trackedChunks).toHaveLength(1);
+    expect(trackedChunks[0]?.value).toBe(result.response.text);
+    expect(trackedChunks[0]?.index).toBe(0);
   });
 
   it("logs safety flags for risky requests", async () => {
@@ -141,4 +180,3 @@ describe("DialogueOrchestrator", () => {
     expect(result.response.metadata?.responseSource).toBe("canned");
   });
 });
-

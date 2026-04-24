@@ -1,0 +1,11 @@
+{
+  "name": "@npc-creator/metrics-cli-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.1"
+  }
+}
