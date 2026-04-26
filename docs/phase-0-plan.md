@@ -110,23 +110,25 @@ Each stub ships with a hand-written `manifest.json` matching the Phaser-native s
 
 ## UI shell
 
-Single editor page, three regions:
+Single editor page, four regions:
 
-1. **Stage (center)** — Phaser canvas. Shows base sprite + plays current pose loop. Pose dropdown above it.
-2. **Inspector (right)** — fields for `name`, `archetype` (select), `outfit` (text), `palette` (color chips), `expression` (chips), `voice` (placeholder dropdown). Each field debounced-saves and triggers a re-gen of the base sprite.
-3. **Pose grid (bottom)** — cards for each pose. "+ Add pose" opens a small picker. Each card shows status (pending / ready / failed) and a thumbnail.
-4. **AI-assist field** (single input, top-right of inspector) — "describe a change…" — stub in Phase 0, just appends to a transcript. Wires up real LLM in Phase 2+.
+1. **Stage (center)** — Phaser canvas. Shows the currently selected pose (idle by default), played as a loop. Pose dropdown above it.
+2. **Portrait panel (top of inspector)** — plain `<img>` rendering `portraitUrl` (illustrated, not pixel art — never goes through Phaser). Has an explicit **"Regenerate portrait"** button that calls `POST /characters/:slug/portrait`.
+3. **Inspector (right)** — fields for `name`, `archetype` (select), `outfit` (text), `palette` (color chips), `expression` (chips), `voice` (placeholder dropdown). Each field change immediately calls `PATCH` (saves attributes only). Visual fields (`archetype`, `outfit`, `palette`, `expression`) additionally debounce-trigger `POST /portrait` after ~1.5 s of inactivity to refresh the portrait. **Sprite poses never auto-regen** — they cost more per call and the user controls them via explicit pose-grid actions.
+4. **Pose grid (bottom)** — cards for each pose with status (pending / ready / failed) and a thumbnail. "+ Add pose" calls `POST /poses`. A per-card "Regenerate" affordance also calls `POST /poses` for that name.
+5. **AI-assist field** (single input, top-right of inspector) — "describe a change…" — stub in Phase 0, just appends to a transcript. Wires up real LLM in Phase 2+.
 
-Public viewer page (`/c/:slug`) is the same Phaser stage + pose dropdown + a play button for voice — no inspector, no edit affordances.
+Public viewer page (`/c/:slug`) shows the portrait (plain `<img>`), the Phaser stage with a pose dropdown, and a play button for voice — no inspector, no regenerate buttons, no edit affordances.
 
 ## Concrete deliverables to call Phase 0 done
 
 - [ ] `pnpm dev` boots Vite frontend + Node API + local SQLite, hot reloads both
 - [ ] Hitting `/` and entering text creates a character, redirects to `/c/:slug/edit?key=…`
-- [ ] Editor renders a stub sprite on the Phaser stage, plays an idle loop
-- [ ] Editing inspector fields updates DB and re-fetches a (still stub) base sprite
-- [ ] Adding a pose ("walk") shows it in the grid and plays it on the stage
-- [ ] Copying `/c/:slug` to incognito → shows public viewer with stub assets, no edit UI
+- [ ] Editor renders the stub portrait above the Phaser stage; the stage plays the idle pose on a loop
+- [ ] Editing an inspector field calls `PATCH` and persists. Editing a *visual* field (archetype / outfit / palette / expression) additionally debounce-triggers `POST /portrait` and the portrait panel re-renders with the new (still stub) image. Non-visual fields (e.g. `name`) save without triggering regen.
+- [ ] Clicking "Regenerate portrait" calls `POST /portrait` and the panel updates
+- [ ] Adding a pose ("walk") via the pose grid calls `POST /poses`, the card shows in the grid, and the new pose plays on the stage
+- [ ] Copying `/c/:slug` to incognito → public viewer renders portrait + Phaser stage with pose dropdown, no edit UI present
 - [ ] R2 is wired (even if stub assets are uploaded once and reused) — proves the upload path works before nano banana lands
 - [ ] Drizzle migrations, env var loading, and a basic Hono auth middleware that checks `editKey` against `editKeyHash`
 - [ ] One Playwright happy-path test that scripts the deliverables above (create → edit → add pose → public view in a fresh context). This is the regression net for Phase 1.

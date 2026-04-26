@@ -160,13 +160,20 @@ Your job is the user-facing pages:
   - Stage center: <SpriteStage> from Slice 3, plays the currently
     selected pose
   - Inspector right: name, archetype, outfit, palette chips, expression,
-    voice (placeholder dropdown). Debounced PATCH on each change, no
-    auto-regen.
+    voice (placeholder dropdown). Each change calls PATCH immediately
+    (no debounce on saves — closing the tab shouldn't lose edits).
+    Visual fields (archetype, outfit, palette, expression) additionally
+    debounce-trigger POST /portrait after ~1.5 s of inactivity. Sprite
+    poses NEVER auto-regen — too expensive per call; user controls them
+    via the pose grid.
   - Above the stage: portrait preview from `portraitUrl` (plain <img>,
     NOT through Phaser — portraits are illustrated, not pixel art).
-    Button to re-run portrait generation (POST /portrait).
+    Explicit "Regenerate portrait" button calls POST /portrait. The
+    debounced auto-regen above is in addition to this button, not
+    instead of it — the button is the primary control.
   - Pose grid below stage: cards per pose with status. "+ Add pose"
-    button POSTs /poses. Each card shows thumbnail + status.
+    button POSTs /poses. Each card shows thumbnail + status, with a
+    per-card "Regenerate" affordance that POSTs /poses for that name.
   - AI-assist field top-right: stub for Phase 0, just appends to a
     transcript and shows it.
 - `/c/:slug` — public viewer: portrait header, <SpriteStage> with pose
@@ -197,9 +204,13 @@ Your job is verification + deploy prep:
 - Add Playwright with one happy-path test that scripts the full
   deliverables checklist:
     1. POST / with a description → redirected to edit URL
-    2. Editor renders portrait + idle sprite
-    3. Edit an inspector field → debounced save → portrait re-fetch
-    4. Add a "walk" pose → appears in grid → plays on stage
+    2. Editor renders portrait above + idle pose on the Phaser stage
+    3. Edit a non-visual field (e.g. name) → PATCH persists, no portrait
+       refetch
+    4. Edit a visual field (e.g. outfit) → PATCH persists + debounced
+       POST /portrait → portrait panel re-renders with the new stub
+    5. Click "+ Add pose" with name "walk" → POST /poses → card appears
+       in grid → pose plays on stage
     5. Open /c/:slug in fresh browser context → public viewer renders,
        no edit UI visible
 - Wire R2: one-shot script that uploads the stub catalog under
