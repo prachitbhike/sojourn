@@ -12,6 +12,7 @@ Read these before writing code. If your task contradicts them, **stop and flag i
 
 - `docs/phase-0-plan.md` — the current phase spec. Stack choices, data model, API surface, URL strategy, stub asset catalog, deliverables checklist.
 - `docs/decisions.md` — running log of consequential decisions and why. Append to it when a new decision surfaces that wasn't in the plan.
+- `docs/execution-plan.md` — slicing for Phase 0, the prompt each slice's thread should be started with, the per-slice review checklist, and what to do when a slice goes sideways. Read your slice's prompt before starting work.
 
 ## Stack at a glance
 
