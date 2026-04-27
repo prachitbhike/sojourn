@@ -1,8 +1,5 @@
-import { migrate } from 'drizzle-orm/libsql/migrator';
-import { db } from './client.js';
+import { runMigrations } from './migrate-runner.js';
 
-const migrationsFolder = new URL('../../drizzle', import.meta.url).pathname;
-
-await migrate(db, { migrationsFolder });
-console.log(`migrations applied from ${migrationsFolder}`);
+const folder = await runMigrations();
+console.log(`migrations applied from ${folder}`);
 process.exit(0);

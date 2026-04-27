@@ -1,6 +1,19 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+function parseValue(raw: string): string {
+  const value = raw.trim();
+  if (value.startsWith('"') || value.startsWith("'")) {
+    const quote = value[0]!;
+    const close = value.indexOf(quote, 1);
+    if (close === -1) return value;
+    return value.slice(1, close);
+  }
+  const commentIdx = value.search(/\s+#/);
+  if (commentIdx === -1) return value;
+  return value.slice(0, commentIdx).trimEnd();
+}
+
 function loadDotEnv(filename: string): void {
   const path = resolve(process.cwd(), filename);
   if (!existsSync(path)) return;
@@ -11,13 +24,7 @@ function loadDotEnv(filename: string): void {
     const eq = line.indexOf('=');
     if (eq === -1) continue;
     const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
+    const value = parseValue(line.slice(eq + 1));
     if (process.env[key] === undefined) {
       process.env[key] = value;
     }
@@ -27,22 +34,30 @@ function loadDotEnv(filename: string): void {
 loadDotEnv('.env.local');
 loadDotEnv('.env');
 
-const DEFAULTS = {
-  DATABASE_URL: 'file:./local.db',
-  STUB_SOURCE: 'local' as 'local' | 'r2',
-  CORS_ORIGIN: 'http://localhost:5173',
-  PORT: '3000',
-  NODE_ENV: process.env.NODE_ENV ?? 'development',
-  MIGRATE_ON_BOOT: '0',
-};
+function parseStubSource(value: string | undefined): 'local' | 'r2' {
+  if (value === undefined || value === '') return 'local';
+  if (value !== 'local' && value !== 'r2') {
+    throw new Error(`STUB_SOURCE must be "local" or "r2" (got: "${value}")`);
+  }
+  return value;
+}
+
+function parsePort(value: string | undefined): number {
+  const raw = value ?? '3000';
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error(`PORT must be a positive integer ≤ 65535 (got: "${raw}")`);
+  }
+  return port;
+}
 
 export const env = {
-  DATABASE_URL: process.env.DATABASE_URL ?? DEFAULTS.DATABASE_URL,
-  STUB_SOURCE: (process.env.STUB_SOURCE ?? DEFAULTS.STUB_SOURCE) as 'local' | 'r2',
-  CORS_ORIGIN: process.env.CORS_ORIGIN ?? DEFAULTS.CORS_ORIGIN,
-  PORT: Number.parseInt(process.env.PORT ?? DEFAULTS.PORT, 10),
-  NODE_ENV: process.env.NODE_ENV ?? DEFAULTS.NODE_ENV,
-  MIGRATE_ON_BOOT: (process.env.MIGRATE_ON_BOOT ?? DEFAULTS.MIGRATE_ON_BOOT) === '1',
+  DATABASE_URL: process.env.DATABASE_URL ?? 'file:./local.db',
+  STUB_SOURCE: parseStubSource(process.env.STUB_SOURCE),
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  PORT: parsePort(process.env.PORT),
+  NODE_ENV: process.env.NODE_ENV ?? 'development',
+  MIGRATE_ON_BOOT: process.env.MIGRATE_ON_BOOT === '1',
   R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL,
   EDIT_KEY_PEPPER: process.env.EDIT_KEY_PEPPER,
 };
