@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
     "./pose": "./src/pose.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./contracts": "./src/contracts.ts",
+    "./generators": "./src/generators/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

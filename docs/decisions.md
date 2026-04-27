@@ -135,3 +135,13 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Phaser atlas JSON (`{ frames: [{ filename, frame: {x,y,w,h} }] }`) — supports non-uniform layouts but PixelLab outputs uniform sheets, so the complexity buys nothing
 - Per-frame durations from the start — over-built for current data
 **Reversal cost:** low — additive extension if needed.
+
+## D13 — Generator shape: two distinct interfaces, not one polymorphic method (2026-04-26, refines D09)
+
+**Decision:** `packages/shared/generators` exposes two separate interfaces, `PortraitGenerator` and `SpriteGenerator`, each with a single method (`generatePortrait` / `generatePose`). The registry stores them in two separate maps keyed by their respective generator-id enum (`'stub' | 'nano-banana'` for portraits, `'stub' | 'pixellab'` for sprites). Handlers dispatch via `getPortraitGenerator(reg, character.portraitGenerator)` and `getSpriteGenerator(reg, pose.generator)`.
+**Why:** D08 commits us to a per-artifact-type provider split — PixelLab will only ever produce sprites, nano banana will only ever produce portraits. A single polymorphic `generate(input)` method would force every impl to either implement an unused branch or throw at runtime, and the input/output unions would lose the type narrowing that's the whole point of having a typed interface. Two interfaces also mirror the schema field naming exactly (`characters.portraitGenerator`, `poses.generator`), so dispatch reads naturally.
+**Alternatives considered:**
+- Single interface with a polymorphic `generate({ type: 'portrait' | 'pose', ... })` — looks tidy in the abstract but every concrete impl would throw on the wrong branch and the result type would be a union the caller has to discriminate
+- Single interface with both `generatePortrait` and `generatePose` methods, requiring impls to throw on the unsupported one — same runtime hazard, no type benefit
+- Class hierarchy with abstract base — adds inheritance for no payoff; functions returning interface objects are simpler
+**Reversal cost:** low — collapsing into one interface later is a mechanical refactor, the call sites are few and live in one slice.
