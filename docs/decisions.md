@@ -106,3 +106,32 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Hard-code in handlers, refactor later — classic shipping killer; the refactor lands exactly when the cost of churn matters most
 - Plugin / strategy pattern with runtime registration — over-engineered for two providers
 **Reversal cost:** low — interface lives in `packages/shared`, easy to extend or replace.
+
+## D10 — Auth: cookie OR header, slug-namespaced (2026-04-26, refines D03)
+
+**Decision:** the auth middleware accepts the edit key from EITHER the `X-Edit-Key` request header OR a slug-namespaced HttpOnly cookie `sojourn_edit_<slug>`. The cookie is set server-side at character creation and on every rotation. The URL `?key=…` remains the canonical shareable secret; the cookie is a UX convenience for refreshes and same-browser navigation.
+**Why:** an earlier draft said cookies would be `HttpOnly` AND auth would be via the `X-Edit-Key` header, which is incoherent — JS can't read an `HttpOnly` cookie to populate the header. Accepting either solves it: the cookie carries auth automatically for browser sessions (HttpOnly survives, XSS can't steal it), the header path is for direct API calls / scripts / tools and for the very first request from a fresh browser (read from `?key=` in the URL once, then the response Set-Cookie takes over). Slug-namespacing the cookie prevents editing one character from logging you out of another.
+**Alternatives considered:**
+- Header only (drop `HttpOnly`) — exposes the key to any XSS
+- Cookie only — breaks direct API use without a browser context
+- Single un-namespaced cookie — overwrite collision when editing two characters
+- localStorage — XSS-vulnerable, doesn't auto-attach to requests
+**Reversal cost:** low — middleware change + one Set-Cookie call site.
+
+## D11 — Fixed pose vocabulary in Phase 0 (2026-04-26)
+
+**Decision:** Phase 0 supports exactly four pose names: `idle`, `walk`, `attack`, `cast`. The "+ Add pose" UI is constrained to a picker over this list; the API rejects unknown names with 400. Freeform pose names are deferred to Phase 2+.
+**Why:** stubs are keyed by name (one PNG per pose), so freeform names would either need a fallback stub or fail confusingly. PixelLab in Phase 1 will likely have its own preferred vocabulary; freezing on a small known list now avoids inventing one we'll have to migrate. Validation at the API boundary also catches typos that would otherwise create orphan rows.
+**Alternatives considered:**
+- Freeform names with a default fallback stub — confusing UX, vague stub-asset semantics
+- Larger preset list (run, jump, hurt, die, etc.) — premature; we don't have stubs for them and the catalog stays small
+**Reversal cost:** low — vocabulary lives in one constant in `packages/shared`; expanding it is additive.
+
+## D12 — Pose manifest shape: uniform spritesheet, not atlas (2026-04-26)
+
+**Decision:** the per-pose manifest is `{ frameWidth, frameHeight, frameCount, frameRate, loop }` — a uniform sprite-sheet layout that maps directly onto Phaser's `load.spritesheet` + `anims.create`. Per-frame `{x, y, duration}` arrays are NOT used.
+**Why:** an earlier sketch had per-frame `{x, y, duration}`, which is redundant when frames are uniform (every frame is `frameWidth × frameHeight` laid out in reading order) and is neither Phaser's spritesheet config nor its atlas format. The new shape is what Phaser actually consumes natively. Variable per-frame timing and non-uniform frame placement aren't needed for stub assets or, as far as we know, for PixelLab's output. If they ever are, extend `frameCount: number` to `frames: { duration: number }[]`.
+**Alternatives considered:**
+- Phaser atlas JSON (`{ frames: [{ filename, frame: {x,y,w,h} }] }`) — supports non-uniform layouts but PixelLab outputs uniform sheets, so the complexity buys nothing
+- Per-frame durations from the start — over-built for current data
+**Reversal cost:** low — additive extension if needed.

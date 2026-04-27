@@ -14,9 +14,9 @@ Phase 0 is split into 5 PR-sized chunks. Slice 1 must land first; 2 and 3 run in
 
 | Slice | Ships | Owns | ~Effort |
 |---|---|---|---|
-| 1 — Scaffold | pnpm workspace, Vite shell, Hono health check, Drizzle schema + migration, stub fixtures (portrait + sprites), `.env.example`, `pnpm dev` | new files only | half day |
-| 2 — API + auth + generators | All 7 endpoints, edit-key auth + rotation, pino, CORS, `Generator` interface in `packages/shared/generators` with `stub` impl, vitest for auth | `apps/api/**` and `packages/shared/generators/**` | full day |
-| 3 — SpriteStage | `<SpriteStage>` React component wrapping Phaser, imperative handle, demo route loading stub manifests | `apps/web/src/components/SpriteStage/**` + demo route | half day |
+| 1 — Scaffold | pnpm workspace, Vite shell, Hono `/health` + `/api/stubs/v1/*` static serve, Drizzle schema + migration, stub fixtures (portrait + sprites + per-pose `.json` manifests), `.env.example`, `pnpm dev` | new files only | half day |
+| 2 — API + auth + generators | All 7 endpoints, edit-key auth (header OR slug-namespaced HttpOnly cookie), rotation, pose-name validation, pino, CORS, `Generator` interface in `packages/shared/generators` with `stub` impl, vitest for auth | `apps/api/**` and `packages/shared/generators/**` | full day |
+| 3 — SpriteStage | `<SpriteStage>` React component wrapping Phaser, imperative handle, `/dev/stage` demo route loading stub manifests | `apps/web/src/components/SpriteStage/**` + `apps/web/src/routes/dev/**` | half day |
 | 4 — Editor + viewer | Editor page (inspector + portrait panel + pose grid + AI-assist stub), public viewer, edit-key URL→cookie, "this is the edit URL" banner | `apps/web/src/routes/**` | full day |
 | 5 — E2E + deploy | Playwright happy-path, R2 wired with stubs uploaded once, prod CORS config, deliverables checklist run-through | `e2e/`, infra config | half day |
 
@@ -35,23 +35,33 @@ Your job is the Phase 0 scaffold:
 
 - pnpm workspace with `apps/web` (Vite + React + TS), `apps/api` (Hono + TS),
   and `packages/shared` for cross-app types
-- Drizzle schema matching docs/phase-0-plan.md exactly: `characters` table
-  with `portraitUrl` + `portraitGenerator`, `poses` table with `generator`
-  field, indexes and ON DELETE CASCADE per the plan
+- Drizzle SQLite schema matching docs/phase-0-plan.md exactly:
+  `characters` (with `portraitUrl`, `portraitGenerator`, `portraitStatus`)
+  and `poses` (with `generator`, `status`). JSON columns use
+  `text({ mode: 'json' })` — NOT `jsonb` (that's Postgres). Indexes
+  (`slug` unique, `(characterId, name)` unique on poses) and
+  ON DELETE CASCADE per the plan.
 - First migration committed under apps/api/drizzle/
 - `.env.example` matching the env vars table in the plan, including the
   PIXELLAB_API_KEY placeholder
 - Stub asset catalog committed at apps/api/fixtures/stubs/v1/ — use
   solid-color placeholder PNGs at the documented dimensions (portrait
-  512×512, sprites 64×64 frame). Each pose ships with manifest.json in
-  the Phaser-native shape.
+  512×512, sprites 64×64 per frame). Each pose ships with `<name>.png`
+  AND `<name>.json` matching the `PoseManifest` shape in the plan
+  (`{ frameWidth, frameHeight, frameCount, frameRate, loop }`).
+- Hono server has `/health` AND a static-file route `GET /api/stubs/v1/*`
+  that serves files from `apps/api/fixtures/stubs/v1/` with appropriate
+  cache headers and content types. This is the URL the SpriteStage and
+  generators use in dev. NO business endpoints yet.
 - `pnpm dev` boots web and api with hot reload; Vite proxies /api to
-  the Node server so dev is same-origin
-- Hono server has only a /health endpoint — no business logic yet
+  the Node server so dev is same-origin (and the stub URLs work
+  unchanged in prod when STUB_SOURCE=r2 takes over the same paths).
 
 Stop when `pnpm dev` works, `pnpm --filter api db:migrate` runs cleanly,
-and the stub fixtures are in place. Open a PR titled "Slice 1: Phase 0
-scaffold" and link to docs/phase-0-plan.md in the description.
+and the stub fixtures are reachable in a browser at
+http://localhost:5173/api/stubs/v1/portrait.png (proxied through Vite to
+the API). Open a PR titled "Slice 1: Phase 0 scaffold" and link to
+docs/phase-0-plan.md in the description.
 
 Hard rules from AGENTS.md still apply: don't add deps not in the plan
 without justification; don't run `git add -A`.
@@ -79,28 +89,40 @@ Your job is the Phase 0 API + the generator seam:
 
 3. Implement all 7 endpoints in apps/api/, dispatching all generation
    through the Generator interface (no provider-specific code in handlers):
-   - POST   /api/characters
+   - POST   /api/characters             { prompt }    (NO refImage in
+     Phase 0 — reference upload is deferred to Phase 1)
    - GET    /api/characters/:slug
-   - PATCH  /api/characters/:slug                  (auth: editKey)
-   - POST   /api/characters/:slug/portrait         (auth: editKey)
-   - POST   /api/characters/:slug/poses            (auth: editKey)
-   - POST   /api/characters/:slug/voice            (auth: editKey)
-   - POST   /api/characters/:slug/rotate-key       (auth: current editKey)
+   - PATCH  /api/characters/:slug                     (auth)
+   - POST   /api/characters/:slug/portrait            (auth)
+   - POST   /api/characters/:slug/poses { name }      (auth) — VALIDATE
+     `name` against the fixed vocabulary `['idle','walk','attack','cast']`,
+     return 400 on anything else.
+   - POST   /api/characters/:slug/voice               (auth) — editor only
+   - POST   /api/characters/:slug/rotate-key          (auth: current key)
 
 4. Edit-key flow: nanoid(24) on creation, store hash + EDIT_KEY_PEPPER,
-   middleware checks header `X-Edit-Key`. Rotation invalidates old hash,
-   returns new key.
+   middleware accepts the key from EITHER:
+     a) Header `X-Edit-Key: <editKey>`, OR
+     b) Cookie `sojourn_edit_<slug>=<editKey>` (HttpOnly, SameSite=Lax;
+        Secure in prod). Per-slug cookie name so editing a second
+        character doesn't lock you out of the first.
+   On `POST /characters` success, set the slug-namespaced cookie via
+   Set-Cookie in the response so the browser is auth'd before the first
+   redirect. Rotation invalidates old hash, returns new key, AND issues
+   a fresh Set-Cookie for the same slug.
 
 5. pino structured logs on every auth check (success and failure).
    Failed editKey attempts log a hashed prefix only — never the raw key.
 
 6. CORS configured per the infra section: dev uses Vite proxy
    (same-origin, no CORS), prod uses CORS_ORIGIN env var with
-   credentials=true.
+   credentials=true so the cookie reaches the API cross-origin.
 
-7. Vitest covering: auth middleware happy path, 3 failure cases (missing
-   header, wrong key, rotated key), generator dispatch picking the right
-   impl by `generator` field.
+7. Vitest covering: auth middleware happy path via header, happy path
+   via cookie, 4 failure cases (missing both, wrong key in header, wrong
+   key in cookie, rotated old key), generator dispatch picking the right
+   impl by `generator` field, pose-name validation rejecting unknown
+   names.
 
 Don't touch `apps/web`. Don't import any PixelLab or nano banana SDKs —
 that's Phase 1. Generators are sandboxed in packages/shared/generators/
@@ -120,11 +142,17 @@ Your job is the Phaser rendering component:
 
 - Build apps/web/src/components/SpriteStage/SpriteStage.tsx — a React
   component that mounts a Phaser scene, takes
-  `{ baseUrl, manifest, currentPose }` as props, and exposes
-  `setPose(name)`, `play()`, `pause()` via `useImperativeHandle`
-- Build a /dev/stage demo route that loads the stub manifests directly
-  from /fixtures/stubs/v1/ and lets you flip between idle/walk/attack
-  via buttons
+  `{ spriteSheetUrl, manifest, currentPose }` as props (where `manifest`
+  is the `PoseManifest` shape in docs/phase-0-plan.md:
+  `{ frameWidth, frameHeight, frameCount, frameRate, loop }`), and
+  exposes `setPose(name)`, `play()`, `pause()` via `useImperativeHandle`.
+  Use Phaser's `load.spritesheet` + `anims.create` directly — no
+  per-frame x/y because the layout is uniform.
+- Build a /dev/stage demo route at apps/web/src/routes/dev/stage.tsx
+  that loads the stub manifests via `GET /api/stubs/v1/<name>.json` and
+  the sprite sheets via `GET /api/stubs/v1/<name>.png` (the API serves
+  these from Slice 1, reached via the Vite proxy in dev). Buttons let
+  you flip between idle/walk/attack/cast.
 - The component must support pixel-art rendering crisply — disable
   texture smoothing, integer scaling, no anti-aliasing on the upscale
 - Phaser must be sandboxed inside this one component. No Phaser imports
@@ -153,35 +181,49 @@ your plan for component structure and state flow first.
 
 Your job is the user-facing pages:
 
-- `/` — landing/entry. Single text field ("describe your character") OR
-  upload a reference image. On submit, POST /characters, then redirect
-  to /c/:slug/edit?key=…
+- `/` — landing/entry. Single text field only ("describe your
+  character"). NO reference-image upload in Phase 0 — that's deferred
+  to Phase 1 with the drop-zone UX. On submit, POST /characters
+  { prompt }, server returns { slug, editKey } AND sets the
+  sojourn_edit_<slug> HttpOnly cookie via Set-Cookie. Redirect to
+  /c/:slug/edit?key=… (key still in URL so the edit URL itself remains
+  shareable as the credential — see D03).
 - `/c/:slug/edit?key=…` — editor:
   - Stage center: <SpriteStage> from Slice 3, plays the currently
     selected pose
+  - Portrait panel above the stage: plain <img> rendering portraitUrl
+    (illustrated, NOT through Phaser). Explicit "Regenerate portrait"
+    button calls POST /portrait — the primary control.
   - Inspector right: name, archetype, outfit, palette chips, expression,
     voice (placeholder dropdown). Each change calls PATCH immediately
     (no debounce on saves — closing the tab shouldn't lose edits).
     Visual fields (archetype, outfit, palette, expression) additionally
     debounce-trigger POST /portrait after ~1.5 s of inactivity. Sprite
     poses NEVER auto-regen — too expensive per call; user controls them
-    via the pose grid.
-  - Above the stage: portrait preview from `portraitUrl` (plain <img>,
-    NOT through Phaser — portraits are illustrated, not pixel art).
-    Explicit "Regenerate portrait" button calls POST /portrait. The
-    debounced auto-regen above is in addition to this button, not
-    instead of it — the button is the primary control.
+    via the pose grid. AI-assist field at top-right of inspector — stub
+    for Phase 0, appends to a local transcript only.
   - Pose grid below stage: cards per pose with status. "+ Add pose"
-    button POSTs /poses. Each card shows thumbnail + status, with a
-    per-card "Regenerate" affordance that POSTs /poses for that name.
-  - AI-assist field top-right: stub for Phase 0, just appends to a
-    transcript and shows it.
-- `/c/:slug` — public viewer: portrait header, <SpriteStage> with pose
-  dropdown, voice play button. No inspector, no edit affordances. Works
-  without cookies or edit key.
-- Edit-key handling: on first visit to /c/:slug/edit?key=…, read the
-  query param into a SameSite=Lax cookie so refreshes work. Show a
-  one-time banner: "this is the edit URL — keep it private".
+    picker is constrained to the fixed vocabulary
+    [idle, walk, attack, cast] — no freeform names. Per-card
+    "Regenerate" affordance also calls POST /poses for that name.
+- `/c/:slug` — public viewer: portrait (plain <img>) + <SpriteStage>
+  with pose dropdown. NO voice button in Phase 0 (public-read voice
+  isn't designed yet — reappears in Phase 2). No inspector, no edit
+  affordances. Works without cookies or edit key.
+- Edit-key handling: the cookie is set server-side at character
+  creation, so the editor authenticates via cookie on subsequent
+  requests automatically. The ?key=… in the URL is the
+  shareable-secret; on first visit to a known edit URL from a fresh
+  browser, send the first authed request with the X-Edit-Key header
+  (read from the URL query param) — the server response will
+  Set-Cookie for future requests in that browser. Show a one-time
+  banner: "this is the edit URL — keep it private".
+
+Auth wire-up: requests to /api/* must include `credentials: 'include'`
+on fetch so cookies travel cross-origin in prod (per the CORS section
+of the plan). When acting on the URL key for the first time in a
+browser, also send `X-Edit-Key: <urlKey>` so the request is
+authenticated even before the cookie is set.
 
 Use the Generator-stubbed API from Slice 2 and the SpriteStage from
 Slice 3 unchanged. Don't modify either — if you need a change, surface
@@ -203,16 +245,20 @@ Your job is verification + deploy prep:
 
 - Add Playwright with one happy-path test that scripts the full
   deliverables checklist:
-    1. POST / with a description → redirected to edit URL
+    1. POST / with a description → redirected to edit URL; cookie
+       sojourn_edit_<slug> is set
     2. Editor renders portrait above + idle pose on the Phaser stage
     3. Edit a non-visual field (e.g. name) → PATCH persists, no portrait
        refetch
     4. Edit a visual field (e.g. outfit) → PATCH persists + debounced
        POST /portrait → portrait panel re-renders with the new stub
-    5. Click "+ Add pose" with name "walk" → POST /poses → card appears
-       in grid → pose plays on stage
-    5. Open /c/:slug in fresh browser context → public viewer renders,
-       no edit UI visible
+    5. Click "+ Add pose", pick "walk" from the constrained vocabulary
+       picker → POST /poses → card appears in grid → pose plays on stage
+    6. Try to call POST /poses with name "potato" via the API directly
+       → 400 (pose-name validation)
+    7. Open /c/:slug in fresh browser context → public viewer renders
+       portrait + Phaser stage with pose dropdown, no edit UI, no voice
+       button visible
 - Wire R2: one-shot script that uploads the stub catalog under
   stubs/v1/. Flip STUB_SOURCE=r2 in a staging env file, confirm assets
   load.
