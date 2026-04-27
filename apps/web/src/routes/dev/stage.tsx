@@ -8,10 +8,34 @@ type LoadedPose = {
   manifest: PoseManifest;
 };
 
+function parsePoseManifest(value: unknown): PoseManifest {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('manifest must be a JSON object');
+  }
+  const m = value as Record<string, unknown>;
+  const requireFiniteNumber = (key: string): number => {
+    const v = m[key];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      throw new Error(`manifest.${key} must be a finite number`);
+    }
+    return v;
+  };
+  if (typeof m.loop !== 'boolean') {
+    throw new Error('manifest.loop must be a boolean');
+  }
+  return {
+    frameWidth: requireFiniteNumber('frameWidth'),
+    frameHeight: requireFiniteNumber('frameHeight'),
+    frameCount: requireFiniteNumber('frameCount'),
+    frameRate: requireFiniteNumber('frameRate'),
+    loop: m.loop,
+  };
+}
+
 async function fetchPose(name: PoseName): Promise<LoadedPose> {
   const res = await fetch(`/api/stubs/v1/${name}.json`);
   if (!res.ok) throw new Error(`manifest ${name} ${res.status}`);
-  const manifest = (await res.json()) as PoseManifest;
+  const manifest = parsePoseManifest(await res.json());
   return { name, spriteSheetUrl: `/api/stubs/v1/${name}.png`, manifest };
 }
 

@@ -9,6 +9,7 @@ export type SpriteStageProps = {
 };
 
 export type SpriteStageHandle = {
+  /** Switches to a pose already loaded via the `currentPose` prop. No-ops otherwise. */
   setPose: (name: string) => void;
   play: () => void;
   pause: () => void;
@@ -24,6 +25,8 @@ class StageScene extends Phaser.Scene {
   private readonly loadedKeys = new Set<string>();
   private pending: PendingPose | null = null;
   private isReady = false;
+  // Tracks the latest requested pose so stale load callbacks don't render a frame the user no longer wants.
+  private activePoseName: string | null = null;
 
   constructor() {
     super({ key: SCENE_KEY });
@@ -39,6 +42,7 @@ class StageScene extends Phaser.Scene {
   }
 
   requestPose(next: PendingPose) {
+    this.activePoseName = next.name;
     if (!this.isReady) {
       this.pending = next;
       return;
@@ -47,7 +51,11 @@ class StageScene extends Phaser.Scene {
   }
 
   setPose(name: string) {
-    if (!this.sprite || !this.anims.exists(name)) return;
+    if (!this.sprite || !this.anims.exists(name)) {
+      console.warn(`SpriteStage.setPose("${name}"): pose not loaded; pass it as currentPose first`);
+      return;
+    }
+    this.activePoseName = name;
     this.sprite.anims.play(name, false);
   }
 
@@ -68,7 +76,7 @@ class StageScene extends Phaser.Scene {
 
   private applyPose(next: PendingPose) {
     if (this.loadedKeys.has(next.name)) {
-      this.showPose(next);
+      if (this.activePoseName === next.name) this.showPose(next);
       return;
     }
     this.load.spritesheet(next.name, next.url, {
@@ -78,7 +86,7 @@ class StageScene extends Phaser.Scene {
     this.load.once(Phaser.Loader.Events.COMPLETE, () => {
       this.loadedKeys.add(next.name);
       this.ensureAnim(next);
-      this.showPose(next);
+      if (this.activePoseName === next.name) this.showPose(next);
     });
     this.load.start();
   }
