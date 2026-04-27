@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
+import { DevStagePage } from './routes/dev/stage.js';
 
 type Health = { status: string; env: string; time: string };
 
 export function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/dev/stage') {
+    return <DevStagePage />;
+  }
+  return <HomeView />;
+}
+
+function HomeView() {
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +90,9 @@ export function App() {
             </figure>
           ))}
         </div>
+        <p style={{ marginTop: '1.25rem' }}>
+          See <a href="/dev/stage">/dev/stage</a> for the Phaser sprite-stage demo.
+        </p>
       </section>
     </main>
   );
