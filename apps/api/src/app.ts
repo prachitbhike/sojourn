@@ -1,0 +1,72 @@
+import { fileURLToPath } from 'node:url';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { serveStatic } from '@hono/node-server/serve-static';
+import type { GeneratorRegistry } from '@sojourn/shared/generators';
+import type { DB } from './db/client.js';
+import type { Logger } from './logger.js';
+import { createCharacterRoutes } from './routes/characters.js';
+
+export type AppDeps = {
+  db: DB;
+  generators: GeneratorRegistry;
+  pepper: string;
+  logger: Logger;
+  isProduction: boolean;
+  corsOrigin: string;
+  stubBaseUrl: string;
+  nodeEnv: string;
+};
+
+const stubsRoot = fileURLToPath(new URL('../fixtures/stubs/v1', import.meta.url));
+
+export function createApp(deps: AppDeps) {
+  const app = new Hono();
+
+  const healthBody = () => ({
+    status: 'ok',
+    env: deps.nodeEnv,
+    time: new Date().toISOString(),
+  });
+  app.get('/health', (c) => c.json(healthBody()));
+  app.get('/api/health', (c) => c.json(healthBody()));
+
+  app.use(
+    '/api/*',
+    cors({
+      origin: deps.corsOrigin,
+      credentials: true,
+      allowHeaders: ['Content-Type', 'X-Edit-Key'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    }),
+  );
+
+  app.use(
+    '/api/stubs/v1/*',
+    serveStatic({
+      root: stubsRoot,
+      rewriteRequestPath: (path) => path.replace(/^\/api\/stubs\/v1/, ''),
+      onFound: (_path, c) => {
+        c.header('Cache-Control', 'public, max-age=3600, must-revalidate');
+      },
+    }),
+  );
+
+  app.route('/api/characters', createCharacterRoutes(deps));
+
+  app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
+
+  app.onError((err, c) => {
+    deps.logger.error({ event: 'unhandled_error', err: serializeError(err) });
+    return c.json({ error: 'internal_error' }, 500);
+  });
+
+  return app;
+}
+
+function serializeError(err: unknown): Record<string, unknown> {
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message, stack: err.stack };
+  }
+  return { value: String(err) };
+}

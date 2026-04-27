@@ -1,49 +1,40 @@
-import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono } from 'hono';
+import { db } from './db/client.js';
 import { runMigrations } from './db/migrate-runner.js';
-import { env, isDev } from './env.js';
+import { env, isDev, resolveStubBaseUrl } from './env.js';
+import { createApp } from './app.js';
+import { buildGeneratorRegistry } from './generators.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger({ level: env.LOG_LEVEL });
 
 if (env.MIGRATE_ON_BOOT) {
   const folder = await runMigrations();
-  console.log(`[api] migrations applied at boot from ${folder}`);
+  logger.info({ event: 'migrations.applied', folder });
 }
 
-const stubsRoot = fileURLToPath(new URL('../fixtures/stubs/v1', import.meta.url));
+const stubBaseUrl = resolveStubBaseUrl();
+const generators = buildGeneratorRegistry(stubBaseUrl);
 
-const app = new Hono();
-
-function healthBody() {
-  return { status: 'ok', env: env.NODE_ENV, time: new Date().toISOString() };
-}
-
-app.get('/health', (c) => c.json(healthBody()));
-app.get('/api/health', (c) => c.json(healthBody()));
-
-app.use(
-  '/api/stubs/v1/*',
-  serveStatic({
-    root: stubsRoot,
-    rewriteRequestPath: (path) => path.replace(/^\/api\/stubs\/v1/, ''),
-    onFound: (_path, c) => {
-      c.header('Cache-Control', 'public, max-age=3600, must-revalidate');
-    },
-  }),
-);
-
-app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
-
-app.onError((err, c) => {
-  console.error(err);
-  return c.json({ error: 'internal_error' }, 500);
+const app = createApp({
+  db,
+  generators,
+  pepper: env.EDIT_KEY_PEPPER,
+  logger,
+  isProduction: !isDev,
+  corsOrigin: env.CORS_ORIGIN,
+  stubBaseUrl,
+  nodeEnv: env.NODE_ENV,
 });
 
 const port = env.PORT;
 serve({ fetch: app.fetch, port }, ({ port: actual }) => {
-  console.log(
-    `[api] listening on http://localhost:${actual} (${env.NODE_ENV})${isDev ? ' [dev]' : ''}`,
-  );
+  logger.info({
+    event: 'api.listening',
+    url: `http://localhost:${actual}`,
+    env: env.NODE_ENV,
+    dev: isDev,
+  });
 });
 
 export type AppType = typeof app;

@@ -59,7 +59,21 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV ?? 'development',
   MIGRATE_ON_BOOT: process.env.MIGRATE_ON_BOOT === '1',
   R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL,
-  EDIT_KEY_PEPPER: process.env.EDIT_KEY_PEPPER,
+  EDIT_KEY_PEPPER: process.env.EDIT_KEY_PEPPER ?? '',
+  LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
 };
 
 export const isDev = env.NODE_ENV !== 'production';
+
+export function resolveStubBaseUrl(): string {
+  if (env.STUB_SOURCE === 'r2') {
+    if (!env.R2_PUBLIC_BASE_URL) {
+      throw new Error('STUB_SOURCE=r2 requires R2_PUBLIC_BASE_URL to be set');
+    }
+    const base = env.R2_PUBLIC_BASE_URL.endsWith('/')
+      ? env.R2_PUBLIC_BASE_URL.slice(0, -1)
+      : env.R2_PUBLIC_BASE_URL;
+    return `${base}/stubs/v1`;
+  }
+  return '/api/stubs/v1';
+}
