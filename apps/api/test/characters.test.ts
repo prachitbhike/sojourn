@@ -47,6 +47,19 @@ describe('character lifecycle', () => {
     expect(response.status).toBe(400);
   });
 
+  it('POST /characters rejects prompts over 4000 chars', async () => {
+    const ctx = await setupTestApp();
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'a'.repeat(4001) }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string; message?: string };
+    expect(body.error).toBe('bad_request');
+    expect(body.message).toContain('4000');
+  });
+
   it('PATCH merges attributes rather than replacing them', async () => {
     const ctx = await setupTestApp();
     const { slug, editKey } = await createCharacterFor(ctx);
@@ -115,5 +128,18 @@ describe('character lifecycle', () => {
       body: JSON.stringify({ text: 'no auth' }),
     });
     expect(response.status).toBe(401);
+  });
+
+  it('POST /voice rejects empty / whitespace text with 400', async () => {
+    const ctx = await setupTestApp();
+    const { slug, editKey } = await createCharacterFor(ctx);
+    for (const text of ['', '   ']) {
+      const response = await ctx.fetch(`/api/characters/${slug}/voice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Edit-Key': editKey },
+        body: JSON.stringify({ text }),
+      });
+      expect(response.status, `text=${JSON.stringify(text)}`).toBe(400);
+    }
   });
 });

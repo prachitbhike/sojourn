@@ -51,15 +51,30 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
+function parseEditKeyPepper(value: string | undefined, nodeEnv: string): string {
+  const pepper = value ?? '';
+  if (pepper === '') {
+    if (nodeEnv === 'production') {
+      throw new Error('EDIT_KEY_PEPPER must be set in production');
+    }
+    process.stderr.write(
+      '[api] WARNING: EDIT_KEY_PEPPER is empty — edit-key hashes are unpeppered. Set EDIT_KEY_PEPPER in .env.local for parity with prod.\n',
+    );
+  }
+  return pepper;
+}
+
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+
 export const env = {
   DATABASE_URL: process.env.DATABASE_URL ?? 'file:./local.db',
   STUB_SOURCE: parseStubSource(process.env.STUB_SOURCE),
   CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   PORT: parsePort(process.env.PORT),
-  NODE_ENV: process.env.NODE_ENV ?? 'development',
+  NODE_ENV: nodeEnv,
   MIGRATE_ON_BOOT: process.env.MIGRATE_ON_BOOT === '1',
   R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL,
-  EDIT_KEY_PEPPER: process.env.EDIT_KEY_PEPPER ?? '',
+  EDIT_KEY_PEPPER: parseEditKeyPepper(process.env.EDIT_KEY_PEPPER, nodeEnv),
   LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
 };
 

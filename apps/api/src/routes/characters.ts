@@ -44,6 +44,13 @@ export type RoutesDeps = {
 };
 
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const MAX_PROMPT_LENGTH = 4000;
+const SLUG_INSERT_MAX_ATTEMPTS = 5;
+
+function isUniqueSlugError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /UNIQUE/i.test(message) && /slug/i.test(message);
+}
 
 export function createCharacterRoutes(deps: RoutesDeps): Hono {
   const app = new Hono();
@@ -75,21 +82,40 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
     if (!prompt) {
       return c.json({ error: 'bad_request', message: 'prompt required' }, 400);
     }
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      return c.json(
+        {
+          error: 'bad_request',
+          message: `prompt must be ${MAX_PROMPT_LENGTH} characters or fewer`,
+        },
+        400,
+      );
+    }
 
     const id = generateRowId();
-    const slug = generateSlug();
     const editKey = generateEditKey();
     const editKeyHash = hashEditKey(editKey, deps.pepper);
     const name = prompt.length > 80 ? `${prompt.slice(0, 77)}...` : prompt;
 
-    await deps.db.insert(schema.characters).values({
-      id,
-      slug,
-      editKeyHash,
-      name,
-      basePrompt: prompt,
-      attributes: {},
-    });
+    let slug = '';
+    for (let attempt = 0; attempt < SLUG_INSERT_MAX_ATTEMPTS; attempt += 1) {
+      slug = generateSlug();
+      try {
+        await deps.db.insert(schema.characters).values({
+          id,
+          slug,
+          editKeyHash,
+          name,
+          basePrompt: prompt,
+          attributes: {},
+        });
+        break;
+      } catch (err) {
+        if (!isUniqueSlugError(err)) throw err;
+        deps.logger.warn({ event: 'slug.collision', slug, attempt });
+        if (attempt === SLUG_INSERT_MAX_ATTEMPTS - 1) throw err;
+      }
+    }
 
     const portraitGen = getPortraitGenerator(deps.generators, 'stub');
     const portraitResult = await portraitGen.generatePortrait({
@@ -329,11 +355,11 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
     } catch {
       return c.json({ error: 'bad_request', message: 'invalid JSON body' }, 400);
     }
-    if (
-      !body ||
-      typeof body !== 'object' ||
-      typeof (body as { text: unknown }).text !== 'string'
-    ) {
+    const rawText =
+      body && typeof body === 'object'
+        ? (body as { text: unknown }).text
+        : undefined;
+    if (typeof rawText !== 'string' || rawText.trim() === '') {
       return c.json({ error: 'bad_request', message: 'text required' }, 400);
     }
 
