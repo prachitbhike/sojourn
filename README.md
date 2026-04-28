@@ -14,7 +14,7 @@ Phase 0 — *shareable skeleton with stub generators*. Pre-MVP.
 | 2 | API endpoints, edit-key auth, generator seam (stub impl), pino logging | merged |
 | 3 | `<SpriteStage>` component + `/dev/stage` Phaser demo | merged |
 | 4 | Landing / editor / public viewer UI, inspector, pose grid | open |
-| 5 | Playwright E2E, R2 upload script, prod CORS, deliverables verification | open |
+| 5 | Playwright E2E, R2 upload script, prod CORS, deliverables verification | in review |
 
 All generators currently return canned placeholder assets. No real PixelLab / nano banana / ElevenLabs calls yet — wiring those up is Phase 1+. R2 is configured but not exercised in dev (stubs serve from disk via the API).
 
@@ -73,9 +73,12 @@ pnpm lint                           # eslint + prettier check
 pnpm --filter api db:migrate        # apply Drizzle migrations
 pnpm --filter api db:studio         # open Drizzle Studio
 pnpm --filter api test              # vitest (api package)
+pnpm --filter api stubs:upload      # one-shot push of stub catalog to R2
+pnpm e2e:install                    # install Playwright's chromium (one-time)
+pnpm e2e                            # Playwright happy-path (boots dev servers itself)
 ```
 
-`pnpm e2e` (Playwright) and a root-level `pnpm test` arrive with Slice 5. The canonical command list lives in [AGENTS.md](AGENTS.md#common-commands).
+The canonical command list lives in [AGENTS.md](AGENTS.md#common-commands).
 
 ## API surface (current)
 

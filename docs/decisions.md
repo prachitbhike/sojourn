@@ -157,3 +157,13 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Inline styles only (continue Slice 3) — workable but pseudo-classes and the editor's grid layout would balloon style objects
 **Reversal cost:** low — routing is concentrated in `App.tsx` + `main.tsx`; style files are scoped per page.
 
+## D15 — Production `start` uses tsx as the runtime loader (2026-04-27)
+
+**Decision:** the API's `start` script is `node --import tsx dist/index.js`. tsx moves from devDependency to runtime dependency. `@sojourn/shared` keeps its `exports` pointing at `.ts` source.
+**Why:** `@sojourn/shared` ships TypeScript source (no build step). The api compiles fine to `dist/`, but `node dist/index.js` cannot resolve `@sojourn/shared/generators` because Node's ESM loader can't import `.ts`. Two options: (a) add a build step + dual-conditional `exports` to shared so it emits to `dist/`, or (b) keep shared as source-only and bridge with tsx at runtime. (b) is one line in `apps/api/package.json` and preserves dev/prod symmetry (tsx is already used in dev). (a) doubles the build surface and forces every consumer of shared to rebuild on changes. The runtime cost of tsx is a one-shot esbuild transform per file at startup — negligible for a single long-lived Node process.
+**Alternatives considered:**
+- Build shared to `dist/` with conditional exports (`{ "import": "./dist/...", "default": "./src/..." }`) — clean conceptually, but Vite/tsx/node all match `"import"` first, so dev paths break unless every consumer opts into a non-default condition. More moving parts than the bridge solves.
+- Bundle shared into the api at build (esbuild) — adds a bundler dep just for one workspace import.
+- `node --experimental-strip-types` — strips types but doesn't rewrite `./types.js` → `./types.ts`, so the cross-file imports inside shared still fail.
+**Reversal cost:** low — flipping back to `node dist/index.js` is one line; the cost is paid only when shared grows a build step for unrelated reasons.
+

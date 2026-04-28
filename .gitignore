@@ -24,3 +24,8 @@ build/
 *.db
 *.db-journal
 local.db*
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
