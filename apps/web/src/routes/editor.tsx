@@ -198,7 +198,7 @@ export function EditorPage() {
       </div>
     );
   }
-  if (!character || !currentPoseName) {
+  if (!character) {
     return (
       <div className={styles.page}>
         <p style={{ color: 'var(--sj-muted)' }}>loading…</p>
@@ -235,11 +235,15 @@ export function EditorPage() {
             </button>
           </div>
 
-          <PoseStage
-            poses={poses}
-            currentPoseName={currentPoseName}
-            onSelect={(name) => setCurrentPoseName(name)}
-          />
+          {currentPoseName ? (
+            <PoseStage
+              poses={poses}
+              currentPoseName={currentPoseName}
+              onSelect={(name) => setCurrentPoseName(name)}
+            />
+          ) : (
+            <div className={styles.emptyStage}>no poses yet — add one below</div>
+          )}
 
           <div className={styles.poseGridBlock}>
             <span className={styles.poseGridLabel}>poses</span>

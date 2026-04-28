@@ -80,6 +80,19 @@
   opacity: 0.5;
 }
 
+.emptyStage {
+  width: 256px;
+  height: 256px;
+  background: #1a1a1a;
+  color: var(--sj-muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sj-border);
+  border-radius: 6px;
+}
+
 .poseGridBlock {
   align-self: stretch;
   display: flex;

@@ -29,8 +29,10 @@ export function Inspector({ character, onPatch, saving }: InspectorProps) {
     key: K,
     value: CharacterAttributes[K],
   ) => {
-    const next: CharacterAttributes = { ...attrs, [key]: value };
-    onPatch({ attributes: next });
+    // Send only the changed key. The API merges with existing attributes (see
+    // characters.ts:220), so we don't need to spread `attrs` — and not spreading
+    // avoids a race where two in-flight PATCHes carry stale snapshots of each other.
+    onPatch({ attributes: { [key]: value } });
   };
 
   return (

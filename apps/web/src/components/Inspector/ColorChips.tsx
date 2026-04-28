@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ColorChipsProps = {
   value: string[] | undefined;
@@ -7,24 +7,66 @@ export type ColorChipsProps = {
 
 const DEFAULT_NEW = '#888888';
 
+// Native <input type="color"> fires onChange continuously while the user drags
+// the picker. Without this debounce, every tick would PATCH the server.
+const COMMIT_DEBOUNCE_MS = 300;
+
 export function ColorChips({ value, onChange }: ColorChipsProps) {
-  const palette = value ?? [];
+  const [palette, setPalette] = useState<string[]>(value ?? []);
   const pickerRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<number | null>(null);
+  // True while we have local edits that haven't been flushed upstream yet.
+  const dirtyRef = useRef(false);
+
+  // Sync from props when external value changes and we have no pending edits.
+  useEffect(() => {
+    if (!dirtyRef.current) setPalette(value ?? []);
+  }, [value]);
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    },
+    [],
+  );
+
+  const flushNow = (next: string[]) => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    dirtyRef.current = false;
+    onChange(next);
+  };
+
+  const scheduleFlush = (next: string[]) => {
+    dirtyRef.current = true;
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      dirtyRef.current = false;
+      onChange(next);
+    }, COMMIT_DEBOUNCE_MS);
+  };
 
   const remove = (idx: number) => {
     const next = palette.slice();
     next.splice(idx, 1);
-    onChange(next);
+    setPalette(next);
+    flushNow(next);
   };
 
   const updateAt = (idx: number, color: string) => {
     const next = palette.slice();
     next[idx] = color;
-    onChange(next);
+    setPalette(next);
+    scheduleFlush(next);
   };
 
   const addNew = (color: string) => {
-    onChange([...palette, color]);
+    const next = [...palette, color];
+    setPalette(next);
+    flushNow(next);
   };
 
   return (
