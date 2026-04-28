@@ -145,3 +145,15 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Single interface with both `generatePortrait` and `generatePose` methods, requiring impls to throw on the unsupported one — same runtime hazard, no type benefit
 - Class hierarchy with abstract base — adds inheritance for no payoff; functions returning interface objects are simpler
 **Reversal cost:** low — collapsing into one interface later is a mechanical refactor, the call sites are few and live in one slice.
+
+## D14 — Web app routing + styling stack (2026-04-27)
+
+**Decision:** Slice 4 introduces `react-router-dom` v7 (declarative API, equivalent to v6) for client-side routing, and CSS Modules + a single `global.css` for page-level styling. Component-internal styles stay inline (matching the Slice 3 demo).
+**Why:** Three real routes (`/`, `/c/:slug`, `/c/:slug/edit`) plus a programmatic redirect after `POST /characters` is exactly the inflection where hand-rolling pathname checks costs more code than the dependency. CSS Modules give scoped class names, pseudo-class support, and grid layouts without a utility framework or styled-components. Component-level inline styles stay honest with Slice 3's pattern.
+**Alternatives considered:**
+- Hand-rolled pathname-switching (continues Slice 3's `App.tsx` style) — gets ugly with three routes plus search-params and programmatic navigation
+- TanStack Router / Wouter / React Router v6 — `react-router-dom` is the de facto standard with no peer-dep cost; pinning to v6 would require a manual constraint that v7 already satisfies API-wise
+- Tailwind / styled-components — both heavier than the slice needs and add justification debt
+- Inline styles only (continue Slice 3) — workable but pseudo-classes and the editor's grid layout would balloon style objects
+**Reversal cost:** low — routing is concentrated in `App.tsx` + `main.tsx`; style files are scoped per page.
+
