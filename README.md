@@ -6,17 +6,17 @@ A web app for creating animatable pixel-art sprites with a chat- and inspector-d
 
 ## Status
 
-Phase 0 — *shareable skeleton with stub generators*. Pre-MVP.
+Phase 0 — *shareable skeleton with stub generators* — is complete. The full create → edit → share loop works end-to-end against canned assets. Real generators land in Phase 1.
 
 | Slice | What | State |
 |---|---|---|
 | 1 | pnpm workspace, Vite + Hono scaffold, Drizzle schema + migrations, stub fixtures | merged |
 | 2 | API endpoints, edit-key auth, generator seam (stub impl), pino logging | merged |
 | 3 | `<SpriteStage>` component + `/dev/stage` Phaser demo | merged |
-| 4 | Landing / editor / public viewer UI, inspector, pose grid | open |
-| 5 | Playwright E2E, R2 upload script, prod CORS, deliverables verification | in review |
+| 4 | Landing / editor / public viewer UI, inspector, pose grid | merged |
+| 5 | Playwright E2E happy-path, R2 stub-upload script, prod CORS | merged |
 
-All generators currently return canned placeholder assets. No real PixelLab / nano banana / ElevenLabs calls yet — wiring those up is Phase 1+. R2 is configured but not exercised in dev (stubs serve from disk via the API).
+All generators currently return canned placeholder assets. No real PixelLab / nano banana / ElevenLabs calls yet — wiring those up is Phase 1+. R2 is wired (`pnpm --filter api stubs:upload` pushes the stub catalog) but the dev server still serves stubs from disk by default.
 
 ## Tech stack
 
@@ -57,9 +57,9 @@ pnpm --filter api db:migrate         # apply Drizzle migrations to local SQLite
 pnpm dev                             # boots web + api in parallel
 ```
 
-- Web: <http://localhost:5173>
+- Web: <http://localhost:5173> (landing page → create a character)
 - API: <http://localhost:3000> (override with `PORT` in `.env.local`)
-- Phaser demo: <http://localhost:5173/dev/stage>
+- Phaser demo (component sandbox): <http://localhost:5173/dev/stage>
 
 `EDIT_KEY_PEPPER` is empty by default — the API logs a warning but still runs in dev. Set it in `.env.local` if you want hash parity with prod. R2 / PixelLab / Gemini / ElevenLabs keys can stay blank in Phase 0.
 
@@ -108,21 +108,20 @@ curl -X POST http://localhost:3000/api/characters \
 ## URL & share model
 
 ```
-/                          landing
+/                          landing — prompt-driven create form
 /c/:slug                   public read-only viewer
-/c/:slug/edit?key=:editKey editor
+/c/:slug/edit?key=:editKey editor (portrait, stage, inspector, pose grid)
+/dev/stage                 component sandbox for the Phaser <SpriteStage>
 ```
 
 No accounts in Phase 0. The `editKey` is generated on create, returned in the response, embedded in the editor URL, and mirrored to a cookie. Lose the URL = lose edit access. See decision **D03** in [docs/decisions.md](docs/decisions.md) and the URL section of [docs/phase-0-plan.md](docs/phase-0-plan.md).
-
-The `/c/:slug` and `/c/:slug/edit` views land in Slice 4. Until then, `/` shows API health + the stub-asset gallery, and `/dev/stage` shows the Phaser demo.
 
 ## Documentation index
 
 - [AGENTS.md](AGENTS.md) — agent / contributor conventions, ownership rules, recurring footguns
 - [docs/phase-0-plan.md](docs/phase-0-plan.md) — current phase spec: stack, data model, API, URL strategy, deliverables checklist
 - [docs/execution-plan.md](docs/execution-plan.md) — Phase 0 slice structure and per-slice acceptance criteria
-- [docs/decisions.md](docs/decisions.md) — running decisions log (D01–D13)
+- [docs/decisions.md](docs/decisions.md) — running decisions log (D01–D15)
 
 ## Contributing
 
