@@ -2,10 +2,15 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
-import type { GeneratorRegistry } from '@sojourn/shared/generators';
+import type {
+  GeneratorRegistry,
+  PortraitGeneratorId,
+  SpriteGeneratorId,
+} from '@sojourn/shared/generators';
 import type { DB } from './db/client.js';
 import type { Logger } from './logger.js';
 import { createCharacterRoutes } from './routes/characters.js';
+import { createBackgroundTracker, type BackgroundTracker } from './background.js';
 
 export type AppDeps = {
   db: DB;
@@ -16,13 +21,19 @@ export type AppDeps = {
   corsOrigin: string;
   stubBaseUrl: string;
   nodeEnv: string;
+  defaultPortraitGenerator: PortraitGeneratorId;
+  defaultSpriteGenerator: SpriteGeneratorId;
+  background?: BackgroundTracker;
 };
+
+export type App = ReturnType<typeof createApp>;
 
 const stubsRoot = fileURLToPath(new URL('../fixtures/stubs/v1', import.meta.url));
 const webDistRoot = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+  const background = deps.background ?? createBackgroundTracker();
 
   const healthBody = () => ({
     status: 'ok',
@@ -53,7 +64,20 @@ export function createApp(deps: AppDeps) {
     }),
   );
 
-  app.route('/api/characters', createCharacterRoutes(deps));
+  app.route(
+    '/api/characters',
+    createCharacterRoutes({
+      db: deps.db,
+      generators: deps.generators,
+      pepper: deps.pepper,
+      logger: deps.logger,
+      isProduction: deps.isProduction,
+      stubBaseUrl: deps.stubBaseUrl,
+      defaultPortraitGenerator: deps.defaultPortraitGenerator,
+      defaultSpriteGenerator: deps.defaultSpriteGenerator,
+      background,
+    }),
+  );
 
   app.use('*', async (c, next) => {
     if (c.req.path.startsWith('/api/')) return next();
@@ -71,6 +95,9 @@ export function createApp(deps: AppDeps) {
     deps.logger.error({ event: 'unhandled_error', err: serializeError(err) });
     return c.json({ error: 'internal_error' }, 500);
   });
+
+  // Surface the background tracker to tests / graceful shutdown.
+  (app as unknown as { background: BackgroundTracker }).background = background;
 
   return app;
 }

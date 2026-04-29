@@ -5,6 +5,7 @@ import { env, isDev, resolveStubBaseUrl } from './env.js';
 import { createApp } from './app.js';
 import { buildGeneratorRegistry } from './generators.js';
 import { createLogger } from './logger.js';
+import { sweepStuckPending } from './startup-sweep.js';
 
 const logger = createLogger({ level: env.LOG_LEVEL });
 
@@ -12,6 +13,8 @@ if (env.MIGRATE_ON_BOOT) {
   const folder = await runMigrations();
   logger.info({ event: 'migrations.applied', folder });
 }
+
+await sweepStuckPending(db, logger);
 
 const stubBaseUrl = resolveStubBaseUrl();
 const generators = buildGeneratorRegistry(stubBaseUrl);
@@ -25,6 +28,8 @@ const app = createApp({
   corsOrigin: env.CORS_ORIGIN,
   stubBaseUrl,
   nodeEnv: env.NODE_ENV,
+  defaultPortraitGenerator: env.PORTRAIT_GENERATOR,
+  defaultSpriteGenerator: env.SPRITE_GENERATOR,
 });
 
 const port = env.PORT;
@@ -34,6 +39,8 @@ serve({ fetch: app.fetch, port }, ({ port: actual }) => {
     url: `http://localhost:${actual}`,
     env: env.NODE_ENV,
     dev: isDev,
+    portraitGenerator: env.PORTRAIT_GENERATOR,
+    spriteGenerator: env.SPRITE_GENERATOR,
   });
 });
 

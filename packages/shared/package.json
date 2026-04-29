@@ -9,15 +9,19 @@
     "./pose": "./src/pose.ts",
     "./types": "./src/types.ts",
     "./contracts": "./src/contracts.ts",
-    "./generators": "./src/generators/index.ts"
+    "./generators": "./src/generators/index.ts",
+    "./storage/r2": "./src/storage/r2.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.726.1",
+    "@aws-sdk/s3-request-presigner": "^3.726.1",
     "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {
+    "@types/node": "^22.10.1",
     "typescript": "^5.6.3"
   }
 }

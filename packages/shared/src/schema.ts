@@ -34,6 +34,10 @@ export const characters = sqliteTable(
       .$type<GenerationStatus>()
       .notNull()
       .default('pending'),
+    portraitErrorMessage: text('portrait_error_message'),
+    portraitGenerationsToday: integer('portrait_generations_today').notNull().default(0),
+    poseGenerationsToday: integer('pose_generations_today').notNull().default(0),
+    generationsTodayDate: text('generations_today_date').notNull().default(''),
     voiceId: text('voice_id'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -65,6 +69,7 @@ export const poses = sqliteTable(
       .$type<GenerationStatus>()
       .notNull()
       .default('pending'),
+    errorMessage: text('error_message'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

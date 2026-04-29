@@ -157,6 +157,16 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Inline styles only (continue Slice 3) — workable but pseudo-classes and the editor's grid layout would balloon style objects
 **Reversal cost:** low — routing is concentrated in `App.tsx` + `main.tsx`; style files are scoped per page.
 
+## D16 — Async generation: background tracker + stub-catalog placeholder for pending pose rows (2026-04-29)
+
+**Decision:** Slice 1 of Phase 1 makes `POST /portrait` and `POST /poses` genuinely async — the handler writes status='pending', returns 202, and runs the generator in a fire-and-forget Promise. New pose rows insert with the stub catalog URL + manifest as placeholders so the NOT NULL columns are satisfied and the renderer has a coherent (if temporary) asset. A `BackgroundTracker` exposed via app deps lets vitest `drain()` in-flight work deterministically.
+**Why:** Real PixelLab / nano-banana calls take seconds to minutes; the Phase 0 synchronous handler can't survive that without HTTP timeouts. The placeholder choice means a `pending` walk pose still loads through Phaser instead of throwing on an empty URL — the user sees a stand-in until the real asset lands. The tracker exists because fire-and-forget Promises are otherwise un-awaitable from tests, and "did it land?" assertions need a join point.
+**Alternatives considered:**
+- Make `spriteSheetUrl` / `manifest` nullable for pending rows — schema churn beyond the prompt's scope, and forces every reader to handle null
+- Job queue (BullMQ / pg-boss) — overkill for a single Node process; reintroduce in Phase 2+ if generation needs durability across restarts
+- Tests poll for status with timeouts — flaky, slow, hides ordering bugs
+**Reversal cost:** low — the tracker is a single small module; flipping back to synchronous handlers (or to a real queue) is a contained change inside `routes/characters.ts`.
+
 ## D15 — Production `start` uses tsx as the runtime loader (2026-04-27)
 
 **Decision:** the API's `start` script is `node --import tsx dist/index.js`. tsx moves from devDependency to runtime dependency. `@sojourn/shared` keeps its `exports` pointing at `.ts` source.
