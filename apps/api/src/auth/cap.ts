@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
 import { schema } from '@sojourn/shared';
 import type { DB } from '../db/client.js';
@@ -33,6 +33,12 @@ export function secondsUntilNextUtcMidnight(d: Date): number {
 // Daily cap middleware. Counters increment on attempt — a failed real-API
 // call still cost money and still counts. Mounted after editKeyAuth, which
 // has already populated `c.character`.
+//
+// The check + increment is one atomic SQL statement so concurrent requests for
+// the same character can't both read N and both write N+1. We deliberately do
+// NOT touch `updatedAt` here — that column is the startup sweep's "this row's
+// status was last changed N min ago" signal, and bumping it on every cap-only
+// write would mask hung pending rows.
 export function dailyCap(deps: CapDeps, kind: CapKind): MiddlewareHandler {
   const cap = kind === 'portrait' ? PORTRAIT_DAILY_CAP : POSE_DAILY_CAP;
   return async (c, next) => {
@@ -40,17 +46,40 @@ export function dailyCap(deps: CapDeps, kind: CapKind): MiddlewareHandler {
     const now = (deps.now ?? (() => new Date()))();
     const today = utcDateString(now);
 
-    let portraitCount = character.portraitGenerationsToday;
-    let poseCount = character.poseGenerationsToday;
+    const portraitInc = kind === 'portrait' ? 1 : 0;
+    const poseInc = kind === 'pose' ? 1 : 0;
+    const counterCol =
+      kind === 'portrait'
+        ? schema.characters.portraitGenerationsToday
+        : schema.characters.poseGenerationsToday;
 
-    if (character.generationsTodayDate !== today) {
-      portraitCount = 0;
-      poseCount = 0;
-    }
+    // Atomic: only the row matches if (date is stale) OR (counter < cap).
+    // SET uses CASE WHEN to reset both counters on rollover, otherwise +1.
+    // `.returning()` empty → at-cap → 429.
+    const updated = await deps.db
+      .update(schema.characters)
+      .set({
+        portraitGenerationsToday: sql`CASE WHEN ${schema.characters.generationsTodayDate} != ${today} THEN ${portraitInc} ELSE ${schema.characters.portraitGenerationsToday} + ${portraitInc} END`,
+        poseGenerationsToday: sql`CASE WHEN ${schema.characters.generationsTodayDate} != ${today} THEN ${poseInc} ELSE ${schema.characters.poseGenerationsToday} + ${poseInc} END`,
+        generationsTodayDate: today,
+      })
+      .where(
+        and(
+          eq(schema.characters.id, character.id),
+          sql`(${schema.characters.generationsTodayDate} != ${today} OR ${counterCol} < ${cap})`,
+        ),
+      )
+      .returning({
+        portraitGenerationsToday: schema.characters.portraitGenerationsToday,
+        poseGenerationsToday: schema.characters.poseGenerationsToday,
+        generationsTodayDate: schema.characters.generationsTodayDate,
+      });
 
-    const counter = kind === 'portrait' ? portraitCount : poseCount;
-    if (counter >= cap) {
+    if (updated.length === 0) {
       const retryAfter = secondsUntilNextUtcMidnight(now);
+      const counter = kind === 'portrait'
+        ? character.portraitGenerationsToday
+        : character.poseGenerationsToday;
       c.header('Retry-After', String(retryAfter));
       deps.logger.warn({
         event: 'cap.exceeded',
@@ -69,24 +98,12 @@ export function dailyCap(deps: CapDeps, kind: CapKind): MiddlewareHandler {
       );
     }
 
-    if (kind === 'portrait') portraitCount += 1;
-    else poseCount += 1;
-
-    await deps.db
-      .update(schema.characters)
-      .set({
-        portraitGenerationsToday: portraitCount,
-        poseGenerationsToday: poseCount,
-        generationsTodayDate: today,
-        updatedAt: now,
-      })
-      .where(eq(schema.characters.id, character.id));
-
+    const row = updated[0]!;
     c.set('character', {
       ...character,
-      portraitGenerationsToday: portraitCount,
-      poseGenerationsToday: poseCount,
-      generationsTodayDate: today,
+      portraitGenerationsToday: row.portraitGenerationsToday,
+      poseGenerationsToday: row.poseGenerationsToday,
+      generationsTodayDate: row.generationsTodayDate,
     });
 
     await next();

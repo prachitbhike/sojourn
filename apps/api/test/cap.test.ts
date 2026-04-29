@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { schema } from '@sojourn/shared';
 import { POSE_DAILY_CAP, PORTRAIT_DAILY_CAP } from '../src/auth/cap.js';
+import { STUCK_PENDING_AGE_MS, sweepStuckPending } from '../src/startup-sweep.js';
+import { createLogger } from '../src/logger.js';
 import { createCharacterFor, setupTestApp } from './setup.js';
 
 describe('daily cap middleware', () => {
@@ -93,6 +95,73 @@ describe('daily cap middleware', () => {
       headers: { 'X-Edit-Key': editKey },
     });
     expect(portraitRes.status).toBe(202);
+  });
+
+  it('does NOT increment the counter when the body is invalid (400 before cap)', async () => {
+    const ctx = await setupTestApp();
+    const { slug, editKey } = await createCharacterFor(ctx);
+
+    const res = await ctx.fetch(`/api/characters/${slug}/poses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Edit-Key': editKey },
+      body: JSON.stringify({ name: 'not-a-real-pose' }),
+    });
+    expect(res.status).toBe(400);
+
+    const row = await ctx.db
+      .select()
+      .from(schema.characters)
+      .where(eq(schema.characters.slug, slug))
+      .get();
+    // Validation runs before the cap middleware, so a 400 must not burn a slot.
+    expect(row?.poseGenerationsToday).toBe(0);
+    expect(row?.portraitGenerationsToday).toBe(0);
+  });
+
+  it('does NOT bump the character row updatedAt — sweep stays accurate', async () => {
+    // Regression: previously the cap middleware wrote `updatedAt: now` on every
+    // cap-passing request, which masked stuck-pending portraits whenever a
+    // sibling pose request arrived inside the 5-min sweep window.
+    const ctx = await setupTestApp();
+    const { slug, editKey } = await createCharacterFor(ctx);
+
+    const stale = new Date(Date.now() - STUCK_PENDING_AGE_MS - 60_000);
+    await ctx.db
+      .update(schema.characters)
+      .set({ portraitStatus: 'pending', updatedAt: stale })
+      .where(eq(schema.characters.slug, slug));
+
+    // Cap-passing pose request — should NOT touch the character's updatedAt.
+    const res = await ctx.fetch(`/api/characters/${slug}/poses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Edit-Key': editKey },
+      body: JSON.stringify({ name: 'walk' }),
+    });
+    expect(res.status).toBe(202);
+
+    const after = await ctx.db
+      .select()
+      .from(schema.characters)
+      .where(eq(schema.characters.slug, slug))
+      .get();
+    expect(after?.poseGenerationsToday).toBe(1);
+    // updatedAt must still be stale — the cap middleware doesn't write it.
+    expect(after!.updatedAt.getTime()).toBe(stale.getTime());
+
+    // Sweep now correctly identifies the stuck portrait.
+    const result = await sweepStuckPending(
+      ctx.db,
+      createLogger({ silent: true }),
+      new Date(),
+    );
+    expect(result.characters).toBe(1);
+
+    const swept = await ctx.db
+      .select()
+      .from(schema.characters)
+      .where(eq(schema.characters.slug, slug))
+      .get();
+    expect(swept?.portraitStatus).toBe('failed');
   });
 
   it('rolls counters over to 0 when generationsTodayDate is stale', async () => {

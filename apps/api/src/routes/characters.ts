@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { schema } from '@sojourn/shared';
 import {
@@ -7,6 +7,12 @@ import {
   POSE_NAMES,
   type PoseName,
 } from '@sojourn/shared/pose';
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    poseName: PoseName;
+  }
+}
 import {
   getPortraitGenerator,
   getSpriteGenerator,
@@ -71,6 +77,33 @@ function placeholderSpriteUrl(stubBaseUrl: string, name: PoseName): string {
   const trimmed = stubBaseUrl.endsWith('/') ? stubBaseUrl.slice(0, -1) : stubBaseUrl;
   return `${trimmed}/${name}.png`;
 }
+
+// Parses + validates the POST /poses JSON body and stashes the pose name on
+// the context. Mounted before the cap middleware so a malformed body 400s
+// without burning a daily-cap slot.
+const validatePoseBody: MiddlewareHandler = async (c, next) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'bad_request', message: 'invalid JSON body' }, 400);
+  }
+  const rawName =
+    body && typeof body === 'object' && 'name' in body
+      ? (body as { name: unknown }).name
+      : undefined;
+  if (typeof rawName !== 'string' || !isPoseName(rawName)) {
+    return c.json(
+      {
+        error: 'bad_request',
+        message: `pose name must be one of: ${POSE_NAMES.join(', ')}`,
+      },
+      400,
+    );
+  }
+  c.set('poseName', rawName);
+  await next();
+};
 
 export function createCharacterRoutes(deps: RoutesDeps): Hono {
   const app = new Hono();
@@ -330,28 +363,9 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
     return c.json(payload, 202);
   });
 
-  app.post('/:slug/poses', auth, poseCap, async (c) => {
+  app.post('/:slug/poses', auth, validatePoseBody, poseCap, async (c) => {
     const character = c.get('character');
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'bad_request', message: 'invalid JSON body' }, 400);
-    }
-    const rawName =
-      body && typeof body === 'object' && 'name' in body
-        ? (body as { name: unknown }).name
-        : undefined;
-    if (typeof rawName !== 'string' || !isPoseName(rawName)) {
-      return c.json(
-        {
-          error: 'bad_request',
-          message: `pose name must be one of: ${POSE_NAMES.join(', ')}`,
-        },
-        400,
-      );
-    }
-    const poseName: PoseName = rawName;
+    const poseName = c.get('poseName');
 
     const existing = await deps.db
       .select()

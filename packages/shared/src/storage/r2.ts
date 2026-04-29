@@ -1,5 +1,5 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 
 export type R2Config = {
   accountId: string;
@@ -7,6 +7,11 @@ export type R2Config = {
   secretAccessKey: string;
   bucket: string;
   publicBaseUrl: string;
+};
+
+export type PresignedPost = {
+  url: string;
+  fields: Record<string, string>;
 };
 
 let cachedClient: S3Client | null = null;
@@ -84,32 +89,30 @@ export async function uploadObject(
   return `${config.publicBaseUrl}/${key.replace(/^\/+/, '')}`;
 }
 
-// Returns a presigned PUT URL the browser can upload to directly.
-// The signature covers a `content-length-range` header — the client MUST send
-// `Content-Length-Range: bytes=0-<maxBytes>` exactly, or the signature fails.
-// Combined with the Content-Length the client sends, R2 enforces the size cap.
-export async function presignPutUrl(
+// Presigned POST for browser-direct uploads with a server-enforced size cap.
+// Returns `{ url, fields }`: the browser builds a multipart/form-data body
+// containing every entry in `fields` (policy, signature, key, etc.) followed
+// by the file as the final `file` field, then POSTs to `url`. R2 enforces the
+// `content-length-range` policy condition on its side — uploads above
+// `maxBytes` are rejected without us having to trust the client's headers.
+export async function presignPostUrl(
   key: string,
   contentType: string,
   expiresInSeconds: number,
   maxBytes: number,
-): Promise<string> {
+): Promise<PresignedPost> {
   const { client, config } = getClient();
-  const command = new PutObjectCommand({
+  const result = await createPresignedPost(client, {
     Bucket: config.bucket,
     Key: key,
-    ContentType: contentType,
-  });
-  command.middlewareStack.add(
-    (next) => (args) => {
-      const request = args.request as { headers: Record<string, string> };
-      request.headers['content-length-range'] = `bytes=0-${maxBytes}`;
-      return next(args);
+    Conditions: [
+      ['content-length-range', 0, maxBytes],
+      ['eq', '$Content-Type', contentType],
+    ],
+    Fields: {
+      'Content-Type': contentType,
     },
-    { step: 'build', name: 'addContentLengthRange' },
-  );
-  return getSignedUrl(client, command, {
-    expiresIn: expiresInSeconds,
-    signableHeaders: new Set(['content-type', 'content-length-range']),
+    Expires: expiresInSeconds,
   });
+  return { url: result.url, fields: result.fields };
 }
