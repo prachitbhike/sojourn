@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { schema } from '@sojourn/shared';
 import {
@@ -7,10 +7,19 @@ import {
   POSE_NAMES,
   type PoseName,
 } from '@sojourn/shared/pose';
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    poseName: PoseName;
+  }
+}
 import {
   getPortraitGenerator,
   getSpriteGenerator,
+  STUB_POSE_MANIFESTS,
   type GeneratorRegistry,
+  type PortraitGeneratorId,
+  type SpriteGeneratorId,
 } from '@sojourn/shared/generators';
 import type {
   CharacterDto,
@@ -26,6 +35,7 @@ import type {
 import type { DB } from '../db/client.js';
 import type { Logger } from '../logger.js';
 import { editKeyAuth } from '../auth/middleware.js';
+import { dailyCap } from '../auth/cap.js';
 import {
   cookieNameForSlug,
   generateEditKey,
@@ -33,6 +43,7 @@ import {
   generateSlug,
   hashEditKey,
 } from '../auth/edit-key.js';
+import type { BackgroundTracker } from '../background.js';
 
 export type RoutesDeps = {
   db: DB;
@@ -41,20 +52,64 @@ export type RoutesDeps = {
   logger: Logger;
   isProduction: boolean;
   stubBaseUrl: string;
+  defaultPortraitGenerator: PortraitGeneratorId;
+  defaultSpriteGenerator: SpriteGeneratorId;
+  background: BackgroundTracker;
 };
 
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const MAX_PROMPT_LENGTH = 4000;
 const SLUG_INSERT_MAX_ATTEMPTS = 5;
+const ERROR_MESSAGE_TRUNCATE = 500;
 
 function isUniqueSlugError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /UNIQUE/i.test(message) && /slug/i.test(message);
 }
 
+function truncateError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.length <= ERROR_MESSAGE_TRUNCATE) return message;
+  return `${message.slice(0, ERROR_MESSAGE_TRUNCATE - 1)}…`;
+}
+
+function placeholderSpriteUrl(stubBaseUrl: string, name: PoseName): string {
+  const trimmed = stubBaseUrl.endsWith('/') ? stubBaseUrl.slice(0, -1) : stubBaseUrl;
+  return `${trimmed}/${name}.png`;
+}
+
+// Parses + validates the POST /poses JSON body and stashes the pose name on
+// the context. Mounted before the cap middleware so a malformed body 400s
+// without burning a daily-cap slot.
+const validatePoseBody: MiddlewareHandler = async (c, next) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'bad_request', message: 'invalid JSON body' }, 400);
+  }
+  const rawName =
+    body && typeof body === 'object' && 'name' in body
+      ? (body as { name: unknown }).name
+      : undefined;
+  if (typeof rawName !== 'string' || !isPoseName(rawName)) {
+    return c.json(
+      {
+        error: 'bad_request',
+        message: `pose name must be one of: ${POSE_NAMES.join(', ')}`,
+      },
+      400,
+    );
+  }
+  c.set('poseName', rawName);
+  await next();
+};
+
 export function createCharacterRoutes(deps: RoutesDeps): Hono {
   const app = new Hono();
   const auth = editKeyAuth({ db: deps.db, pepper: deps.pepper, logger: deps.logger });
+  const portraitCap = dailyCap({ db: deps.db, logger: deps.logger }, 'portrait');
+  const poseCap = dailyCap({ db: deps.db, logger: deps.logger }, 'pose');
 
   function setEditCookie(c: Context, slug: string, key: string) {
     setCookie(c, cookieNameForSlug(slug), key, {
@@ -108,6 +163,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
           name,
           basePrompt: prompt,
           attributes: {},
+          portraitGenerator: deps.defaultPortraitGenerator,
         });
         break;
       } catch (err) {
@@ -117,7 +173,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       }
     }
 
-    const portraitGen = getPortraitGenerator(deps.generators, 'stub');
+    const portraitGen = getPortraitGenerator(deps.generators, deps.defaultPortraitGenerator);
     const portraitResult = await portraitGen.generatePortrait({
       characterId: id,
       slug,
@@ -135,7 +191,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       })
       .where(eq(schema.characters.id, id));
 
-    const spriteGen = getSpriteGenerator(deps.generators, 'stub');
+    const spriteGen = getSpriteGenerator(deps.generators, deps.defaultSpriteGenerator);
     const idleResult = await spriteGen.generatePose({
       characterId: id,
       slug,
@@ -238,55 +294,78 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
     return c.json(payload);
   });
 
-  app.post('/:slug/portrait', auth, async (c) => {
+  app.post('/:slug/portrait', auth, portraitCap, async (c) => {
     const character = c.get('character');
-    const gen = getPortraitGenerator(deps.generators, character.portraitGenerator);
-    const result = await gen.generatePortrait({
-      characterId: character.id,
-      slug: character.slug,
-      prompt: character.basePrompt,
-      attributes: character.attributes,
-      refImageUrl: character.refImageUrl,
-    });
+    const generatorId = character.portraitGenerator;
+    const gen = getPortraitGenerator(deps.generators, generatorId);
+    const now = new Date();
+
     await deps.db
       .update(schema.characters)
       .set({
-        portraitUrl: result.url,
-        portraitStatus: result.status,
-        updatedAt: new Date(),
+        portraitStatus: 'pending',
+        portraitErrorMessage: null,
+        updatedAt: now,
       })
       .where(eq(schema.characters.id, character.id));
-    const updated = await deps.db
+
+    const pendingRow = await deps.db
       .select()
       .from(schema.characters)
       .where(eq(schema.characters.id, character.id))
       .get();
-    const payload: GeneratePortraitResponse = { character: toCharacterDto(updated!) };
+
+    deps.background.run(
+      (async () => {
+        try {
+          const result = await gen.generatePortrait({
+            characterId: character.id,
+            slug: character.slug,
+            prompt: character.basePrompt,
+            attributes: character.attributes,
+            refImageUrl: character.refImageUrl,
+          });
+          await deps.db
+            .update(schema.characters)
+            .set({
+              portraitUrl: result.url,
+              portraitStatus: result.status,
+              portraitErrorMessage: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.characters.id, character.id));
+          deps.logger.info({
+            event: 'portrait.generated',
+            slug: character.slug,
+            generator: gen.id,
+            status: result.status,
+          });
+        } catch (err) {
+          deps.logger.error({
+            event: 'portrait.failed',
+            slug: character.slug,
+            generator: gen.id,
+            err: serializeError(err),
+          });
+          await deps.db
+            .update(schema.characters)
+            .set({
+              portraitStatus: 'failed',
+              portraitErrorMessage: truncateError(err),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.characters.id, character.id));
+        }
+      })(),
+    );
+
+    const payload: GeneratePortraitResponse = { character: toCharacterDto(pendingRow!) };
     return c.json(payload, 202);
   });
 
-  app.post('/:slug/poses', auth, async (c) => {
+  app.post('/:slug/poses', auth, validatePoseBody, poseCap, async (c) => {
     const character = c.get('character');
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'bad_request', message: 'invalid JSON body' }, 400);
-    }
-    const rawName =
-      body && typeof body === 'object' && 'name' in body
-        ? (body as { name: unknown }).name
-        : undefined;
-    if (typeof rawName !== 'string' || !isPoseName(rawName)) {
-      return c.json(
-        {
-          error: 'bad_request',
-          message: `pose name must be one of: ${POSE_NAMES.join(', ')}`,
-        },
-        400,
-      );
-    }
-    const poseName: PoseName = rawName;
+    const poseName = c.get('poseName');
 
     const existing = await deps.db
       .select()
@@ -299,52 +378,92 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       )
       .get();
 
-    const generatorId = existing?.generator ?? 'stub';
+    const generatorId = existing?.generator ?? deps.defaultSpriteGenerator;
     const gen = getSpriteGenerator(deps.generators, generatorId);
-    const result = await gen.generatePose({
-      characterId: character.id,
-      slug: character.slug,
-      poseName,
-      prompt: character.basePrompt,
-      attributes: character.attributes,
-      refImageUrl: character.refImageUrl,
-    });
+    const now = new Date();
+    let rowId: string;
 
-    let row;
     if (existing) {
+      rowId = existing.id;
       await deps.db
         .update(schema.poses)
         .set({
-          spriteSheetUrl: result.spriteSheetUrl,
-          manifest: result.manifest,
-          status: result.status,
-          updatedAt: new Date(),
+          status: 'pending',
+          errorMessage: null,
+          updatedAt: now,
         })
         .where(eq(schema.poses.id, existing.id));
-      row = await deps.db
-        .select()
-        .from(schema.poses)
-        .where(eq(schema.poses.id, existing.id))
-        .get();
     } else {
-      const newId = generateRowId();
+      rowId = generateRowId();
+      // Placeholder URL/manifest so the row satisfies the NOT NULL constraints
+      // and renders something coherent during pending. Stub catalog assets are
+      // valid for any pose name and round-trip through the renderer cleanly.
       await deps.db.insert(schema.poses).values({
-        id: newId,
+        id: rowId,
         characterId: character.id,
         name: poseName,
-        spriteSheetUrl: result.spriteSheetUrl,
-        manifest: result.manifest,
+        spriteSheetUrl: placeholderSpriteUrl(deps.stubBaseUrl, poseName),
+        manifest: STUB_POSE_MANIFESTS[poseName],
         generator: gen.id,
-        status: result.status,
+        status: 'pending',
       });
-      row = await deps.db
-        .select()
-        .from(schema.poses)
-        .where(eq(schema.poses.id, newId))
-        .get();
     }
 
-    const payload: GeneratePoseResponse = { pose: toPoseDto(row!) };
+    const pendingRow = await deps.db
+      .select()
+      .from(schema.poses)
+      .where(eq(schema.poses.id, rowId))
+      .get();
+
+    deps.background.run(
+      (async () => {
+        try {
+          const result = await gen.generatePose({
+            characterId: character.id,
+            slug: character.slug,
+            poseName,
+            prompt: character.basePrompt,
+            attributes: character.attributes,
+            refImageUrl: character.refImageUrl,
+          });
+          await deps.db
+            .update(schema.poses)
+            .set({
+              spriteSheetUrl: result.spriteSheetUrl,
+              manifest: result.manifest,
+              status: result.status,
+              errorMessage: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.poses.id, rowId));
+          deps.logger.info({
+            event: 'pose.generated',
+            slug: character.slug,
+            poseName,
+            generator: gen.id,
+            status: result.status,
+          });
+        } catch (err) {
+          deps.logger.error({
+            event: 'pose.failed',
+            slug: character.slug,
+            poseName,
+            generator: gen.id,
+            err: serializeError(err),
+          });
+          await deps.db
+            .update(schema.poses)
+            .set({
+              status: 'failed',
+              errorMessage: truncateError(err),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.poses.id, rowId));
+        }
+      })(),
+    );
+
+    const payload: GeneratePoseResponse = { pose: toPoseDto(pendingRow!) };
     return c.json(payload, 202);
   });
 
@@ -384,6 +503,13 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
   });
 
   return app;
+}
+
+function serializeError(err: unknown): Record<string, unknown> {
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message, stack: err.stack };
+  }
+  return { value: String(err) };
 }
 
 function toCharacterDto(row: typeof schema.characters.$inferSelect): CharacterDto {

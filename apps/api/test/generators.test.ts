@@ -117,11 +117,18 @@ describe('Handler dispatch — picks the impl by the persisted generator field',
     });
     expect(stubRun.status).toBe(202);
     const stubBody = (await stubRun.json()) as {
-      character: { portraitUrl: string; portraitGenerator: string };
+      character: { portraitStatus: string; portraitGenerator: string };
     };
-    expect(stubBody.character.portraitUrl).toBe(`${stubBaseUrl}/portrait.png`);
+    expect(stubBody.character.portraitStatus).toBe('pending');
     expect(stubBody.character.portraitGenerator).toBe('stub');
     expect(portraitSpy).not.toHaveBeenCalled();
+
+    await ctx.drain();
+    const stubAfter = (await (
+      await ctx.fetch(`/api/characters/${slug}`)
+    ).json()) as { character: { portraitUrl: string; portraitStatus: string } };
+    expect(stubAfter.character.portraitUrl).toBe(`${stubBaseUrl}/portrait.png`);
+    expect(stubAfter.character.portraitStatus).toBe('ready');
 
     // Flip portraitGenerator to nano-banana directly in the DB → handler picks the fake impl.
     const { schema } = await import('@sojourn/shared');
@@ -136,11 +143,13 @@ describe('Handler dispatch — picks the impl by the persisted generator field',
       headers: { 'X-Edit-Key': editKey },
     });
     expect(nanoRun.status).toBe(202);
-    const nanoBody = (await nanoRun.json()) as {
-      character: { portraitUrl: string; portraitGenerator: string };
-    };
+    await ctx.drain();
     expect(portraitSpy).toHaveBeenCalledTimes(1);
-    expect(nanoBody.character.portraitUrl).toBe('http://nano.test/sentinel.png');
-    expect(nanoBody.character.portraitGenerator).toBe('nano-banana');
+
+    const nanoAfter = (await (
+      await ctx.fetch(`/api/characters/${slug}`)
+    ).json()) as { character: { portraitUrl: string; portraitGenerator: string } };
+    expect(nanoAfter.character.portraitUrl).toBe('http://nano.test/sentinel.png');
+    expect(nanoAfter.character.portraitGenerator).toBe('nano-banana');
   });
 });

@@ -1,20 +1,28 @@
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@libsql/client';
-import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
+import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createApp } from '../src/app.js';
 import { buildGeneratorRegistry } from '../src/generators.js';
 import { createLogger } from '../src/logger.js';
-import type { GeneratorRegistry } from '@sojourn/shared/generators';
+import { createBackgroundTracker, type BackgroundTracker } from '../src/background.js';
+import type { DB } from '../src/db/client.js';
+import type {
+  GeneratorRegistry,
+  PortraitGeneratorId,
+  SpriteGeneratorId,
+} from '@sojourn/shared/generators';
 
 const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
 
 export type TestContext = {
   app: ReturnType<typeof createApp>;
-  db: LibSQLDatabase;
+  db: DB;
   pepper: string;
   stubBaseUrl: string;
   generators: GeneratorRegistry;
+  background: BackgroundTracker;
+  drain: () => Promise<void>;
   fetch: (
     path: string,
     init?: RequestInit & { cookieJar?: CookieJar },
@@ -23,17 +31,23 @@ export type TestContext = {
 
 export type CookieJar = Map<string, string>;
 
-export async function setupTestApp(
-  options: { generators?: GeneratorRegistry; stubBaseUrl?: string } = {},
-): Promise<TestContext> {
+export type SetupOptions = {
+  generators?: GeneratorRegistry;
+  stubBaseUrl?: string;
+  defaultPortraitGenerator?: PortraitGeneratorId;
+  defaultSpriteGenerator?: SpriteGeneratorId;
+};
+
+export async function setupTestApp(options: SetupOptions = {}): Promise<TestContext> {
   const stubBaseUrl = options.stubBaseUrl ?? 'http://stubs.test/stubs/v1';
   const client = createClient({ url: ':memory:' });
-  const db = drizzle(client);
+  const db = drizzle(client) as DB;
   await migrate(db, { migrationsFolder });
 
   const generators = options.generators ?? buildGeneratorRegistry(stubBaseUrl);
   const logger = createLogger({ silent: true });
   const pepper = 'test-pepper';
+  const background = createBackgroundTracker();
 
   const app = createApp({
     db,
@@ -44,6 +58,9 @@ export async function setupTestApp(
     corsOrigin: 'http://localhost:5173',
     stubBaseUrl,
     nodeEnv: 'test',
+    defaultPortraitGenerator: options.defaultPortraitGenerator ?? 'stub',
+    defaultSpriteGenerator: options.defaultSpriteGenerator ?? 'stub',
+    background,
   });
 
   return {
@@ -52,6 +69,8 @@ export async function setupTestApp(
     pepper,
     stubBaseUrl,
     generators,
+    background,
+    drain: () => background.drain(),
     async fetch(path, init = {}) {
       const url = `http://test.local${path}`;
       const headers = new Headers(init.headers);

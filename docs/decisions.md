@@ -157,6 +157,26 @@ Keep entries short. If a decision needs a long writeup, link out to a separate d
 - Inline styles only (continue Slice 3) — workable but pseudo-classes and the editor's grid layout would balloon style objects
 **Reversal cost:** low — routing is concentrated in `App.tsx` + `main.tsx`; style files are scoped per page.
 
+## D17 — Slice 1 review hardening: atomic cap, sweep timing, presigned POST (2026-04-29)
+
+**Decision:** four follow-up fixes on top of D16's Slice 1 work, surfaced by code review of [PR #12](https://github.com/prachitbhike/sojourn/pull/12). (1) The daily-cap middleware no longer writes `updatedAt` on the character row — that column is the startup sweep's "pending status changed N min ago" signal, and bumping it on every cap-passing request masked stuck portraits. (2) Cap check + counter bump moved into a single conditional `UPDATE … RETURNING` statement so concurrent requests can't both read N and both write N+1. (3) `POST /poses` body validation moved into a `validatePoseBody` middleware ahead of the cap so a 400 (bad pose name / malformed JSON) doesn't burn a daily-cap slot. (4) The R2 helper's `presignPutUrl` was replaced with `presignPostUrl` using `@aws-sdk/s3-presigned-post`'s `createPresignedPost` — the previous PUT + signed `content-length-range` *request header* approach doesn't work for browser uploads (browsers don't send that header), so we switched to the standard pattern of presigned POST + multipart form-data with a `content-length-range` *policy condition*.
+**Why:** these four came out of a single review pass and are scoped to Slice 1 — better to land them inside the same Phase 1 foundations PR than to ship known footguns into Slices 2/3/4.
+**Alternatives considered:**
+- Add a dedicated `*StatusChangedAt` column for the sweep — more correct, but a schema migration beyond the review's scope; the simpler "don't bump `updatedAt` from the cap" fix lands the same property without a migration
+- Keep `presignPutUrl` and document it as "Slice 4 will figure it out" — leaves a known-broken signature shape in place that Slice 4 would have to revisit anyway
+- SQL-side cap check via two UPDATEs (rollover, then increment) — racy across concurrent requests; the single-statement CASE WHEN is genuinely atomic
+**Reversal cost:** low — each fix is contained inside one file (cap.ts, characters.ts, r2.ts) and doesn't touch the public response shape; the R2 helper signature change matters only to as-yet-unwritten Slice 4 callers.
+
+## D16 — Async generation: background tracker + stub-catalog placeholder for pending pose rows (2026-04-29)
+
+**Decision:** Slice 1 of Phase 1 makes `POST /portrait` and `POST /poses` genuinely async — the handler writes status='pending', returns 202, and runs the generator in a fire-and-forget Promise. New pose rows insert with the stub catalog URL + manifest as placeholders so the NOT NULL columns are satisfied and the renderer has a coherent (if temporary) asset. A `BackgroundTracker` exposed via app deps lets vitest `drain()` in-flight work deterministically.
+**Why:** Real PixelLab / nano-banana calls take seconds to minutes; the Phase 0 synchronous handler can't survive that without HTTP timeouts. The placeholder choice means a `pending` walk pose still loads through Phaser instead of throwing on an empty URL — the user sees a stand-in until the real asset lands. The tracker exists because fire-and-forget Promises are otherwise un-awaitable from tests, and "did it land?" assertions need a join point.
+**Alternatives considered:**
+- Make `spriteSheetUrl` / `manifest` nullable for pending rows — schema churn beyond the prompt's scope, and forces every reader to handle null
+- Job queue (BullMQ / pg-boss) — overkill for a single Node process; reintroduce in Phase 2+ if generation needs durability across restarts
+- Tests poll for status with timeouts — flaky, slow, hides ordering bugs
+**Reversal cost:** low — the tracker is a single small module; flipping back to synchronous handlers (or to a real queue) is a contained change inside `routes/characters.ts`.
+
 ## D15 — Production `start` uses tsx as the runtime loader (2026-04-27)
 
 **Decision:** the API's `start` script is `node --import tsx dist/index.js`. tsx moves from devDependency to runtime dependency. `@sojourn/shared` keeps its `exports` pointing at `.ts` source.

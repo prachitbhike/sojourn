@@ -42,6 +42,31 @@ function parseStubSource(value: string | undefined): 'local' | 'r2' {
   return value;
 }
 
+const PORTRAIT_GENERATOR_IDS = ['stub', 'nano-banana'] as const;
+type PortraitGeneratorId = (typeof PORTRAIT_GENERATOR_IDS)[number];
+const SPRITE_GENERATOR_IDS = ['stub', 'pixellab'] as const;
+type SpriteGeneratorId = (typeof SPRITE_GENERATOR_IDS)[number];
+
+function parsePortraitGenerator(value: string | undefined): PortraitGeneratorId {
+  const v = value ?? 'stub';
+  if (!(PORTRAIT_GENERATOR_IDS as readonly string[]).includes(v)) {
+    throw new Error(
+      `PORTRAIT_GENERATOR must be one of: ${PORTRAIT_GENERATOR_IDS.join(', ')} (got: "${v}")`,
+    );
+  }
+  return v as PortraitGeneratorId;
+}
+
+function parseSpriteGenerator(value: string | undefined): SpriteGeneratorId {
+  const v = value ?? 'stub';
+  if (!(SPRITE_GENERATOR_IDS as readonly string[]).includes(v)) {
+    throw new Error(
+      `SPRITE_GENERATOR must be one of: ${SPRITE_GENERATOR_IDS.join(', ')} (got: "${v}")`,
+    );
+  }
+  return v as SpriteGeneratorId;
+}
+
 function parsePort(value: string | undefined): number {
   const raw = value ?? '3000';
   const port = Number.parseInt(raw, 10);
@@ -76,6 +101,8 @@ export const env = {
   R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL,
   EDIT_KEY_PEPPER: parseEditKeyPepper(process.env.EDIT_KEY_PEPPER, nodeEnv),
   LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+  PORTRAIT_GENERATOR: parsePortraitGenerator(process.env.PORTRAIT_GENERATOR),
+  SPRITE_GENERATOR: parseSpriteGenerator(process.env.SPRITE_GENERATOR),
 };
 
 export const isDev = env.NODE_ENV !== 'production';
