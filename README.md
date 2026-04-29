@@ -116,6 +116,58 @@ curl -X POST http://localhost:3000/api/characters \
 
 No accounts in Phase 0. The `editKey` is generated on create, returned in the response, embedded in the editor URL, and mirrored to a cookie. Lose the URL = lose edit access. See decision **D03** in [docs/decisions.md](docs/decisions.md) and the URL section of [docs/phase-0-plan.md](docs/phase-0-plan.md).
 
+## Deploying (Railway)
+
+Phase 0 ships as a **single Railway service**: the API serves `apps/web/dist` as static files, so the whole app is one origin and one URL. SQLite lives on a Railway-mounted volume; migrations run on boot.
+
+**One-time setup:**
+
+1. Install the Railway CLI: `brew install railway` (or `npm i -g @railway/cli`).
+2. `railway login` (opens a browser).
+3. From the repo root: `railway init` and pick a project name.
+4. Attach a persistent volume mounted at `/data` (CLI: `railway volume add --mount-path /data`, or use the dashboard).
+5. Set environment variables:
+   ```bash
+   railway variables \
+     --set NODE_ENV=production \
+     --set MIGRATE_ON_BOOT=1 \
+     --set STUB_SOURCE=local \
+     --set LOG_LEVEL=info \
+     --set "DATABASE_URL=file:/data/sojourn.db" \
+     --set "EDIT_KEY_PEPPER=$(node -e 'console.log(require(\"crypto\").randomBytes(32).toString(\"hex\"))')"
+   ```
+6. `railway up` to deploy. `railway domain` issues a public `*.up.railway.app` URL.
+
+**Build & runtime contract** — codified in [`railway.json`](railway.json):
+
+- Build: `pnpm install --frozen-lockfile && pnpm build` (Nixpacks auto-detects pnpm from the lockfile + `packageManager`).
+- Start: `pnpm --filter @sojourn/api start` (compiled JS, run with `node --import tsx`).
+- Healthcheck: `GET /health`.
+
+**Required env vars in production:**
+
+| Var | Value | Notes |
+|---|---|---|
+| `NODE_ENV` | `production` | flips cookies to `SameSite=None; Secure` |
+| `DATABASE_URL` | `file:/data/sojourn.db` | path under the mounted volume |
+| `EDIT_KEY_PEPPER` | random 32+ bytes (hex) | API refuses to boot if empty |
+| `MIGRATE_ON_BOOT` | `1` | runs Drizzle migrations on startup |
+| `STUB_SOURCE` | `local` | serves stubs from `apps/api/fixtures/stubs/v1/` |
+| `PORT` | (auto) | provided by Railway |
+| `LOG_LEVEL` | `info` | optional |
+
+`CORS_ORIGIN` is **not** required while frontend + API share an origin. `R2_*` vars are unused with `STUB_SOURCE=local`.
+
+**Verify after deploy:**
+
+```bash
+curl https://<your-url>.up.railway.app/health        # {"status":"ok",...}
+curl https://<your-url>.up.railway.app/api/health    # same shape
+open  https://<your-url>.up.railway.app/             # SPA loads
+```
+
+If `/health` works but DB writes fail, the volume probably isn't attached. If `/` 404s, `apps/web/dist` didn't build — check the Railway build log for the root `pnpm build` output.
+
 ## Documentation index
 
 - [AGENTS.md](AGENTS.md) — agent / contributor conventions, ownership rules, recurring footguns
