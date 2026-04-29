@@ -19,6 +19,7 @@ export type AppDeps = {
 };
 
 const stubsRoot = fileURLToPath(new URL('../fixtures/stubs/v1', import.meta.url));
+const webDistRoot = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
@@ -53,6 +54,16 @@ export function createApp(deps: AppDeps) {
   );
 
   app.route('/api/characters', createCharacterRoutes(deps));
+
+  app.use('*', async (c, next) => {
+    if (c.req.path.startsWith('/api/')) return next();
+    return serveStatic({ root: webDistRoot })(c, next);
+  });
+
+  app.get('*', async (c, next) => {
+    if (c.req.path.startsWith('/api/')) return next();
+    return serveStatic({ path: 'index.html', root: webDistRoot })(c, next);
+  });
 
   app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
 

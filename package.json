@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
     "build": "pnpm -r --filter './apps/*' build",
+    "start": "pnpm --filter @sojourn/api start",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "e2e": "playwright test",
