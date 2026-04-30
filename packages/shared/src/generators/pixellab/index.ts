@@ -83,18 +83,27 @@ export function createPixelLabSpriteGenerator(config: PixelLabConfig): SpriteGen
           message: `pixellab generator has no defaults for pose "${input.poseName}"`,
         });
       }
+      // PixelLab's /animate-with-text *requires* reference_image despite the
+      // endpoint name — there is no description-only animation endpoint. When
+      // the caller didn't provide one, synthesize a pixel-art reference via
+      // /generate-image-pixflux (description-only) and feed it forward.
+      const description = buildDescription(input.prompt, input.attributes);
       const referenceBase64 = input.refImageUrl
         ? await fetchReferenceAsBase64(input.refImageUrl, fetchImpl, timeoutMs)
-        : null;
+        : await generatePixfluxReference({
+            apiBase,
+            apiKey: config.apiKey,
+            description,
+            timeoutMs,
+            fetchImpl,
+          });
 
       const requestBody = {
         image_size: { width: FRAME_DIMENSION, height: FRAME_DIMENSION },
-        description: buildDescription(input.prompt, input.attributes),
+        description,
         action: input.poseName,
         n_frames: defaults.nFrames,
-        ...(referenceBase64
-          ? { reference_image: { type: 'base64', base64: referenceBase64 } }
-          : {}),
+        reference_image: { type: 'base64', base64: referenceBase64 },
       };
 
       const responseBody = await callPixelLab({
@@ -207,6 +216,46 @@ async function callPixelLab(opts: {
     });
   }
   return body;
+}
+
+async function generatePixfluxReference(opts: {
+  apiBase: string;
+  apiKey: string;
+  description: string;
+  timeoutMs: number;
+  fetchImpl: typeof fetch;
+}): Promise<string> {
+  const body = await callPixelLab({
+    url: `${opts.apiBase}/generate-image-pixflux`,
+    apiKey: opts.apiKey,
+    body: {
+      description: opts.description,
+      image_size: { width: FRAME_DIMENSION, height: FRAME_DIMENSION },
+    },
+    timeoutMs: opts.timeoutMs,
+    fetchImpl: opts.fetchImpl,
+  });
+  if (!body || typeof body !== 'object') {
+    throw new PixelLabGeneratorError({
+      kind: 'malformed',
+      message: 'pixellab pixflux response body was not an object',
+    });
+  }
+  const image = (body as { image?: unknown }).image;
+  if (!image || typeof image !== 'object') {
+    throw new PixelLabGeneratorError({
+      kind: 'malformed',
+      message: 'pixellab pixflux response missing image',
+    });
+  }
+  const b64 = (image as { base64?: unknown }).base64;
+  if (typeof b64 !== 'string' || b64.length === 0) {
+    throw new PixelLabGeneratorError({
+      kind: 'malformed',
+      message: 'pixellab pixflux image missing base64 payload',
+    });
+  }
+  return b64;
 }
 
 function parseFrames(body: unknown): Buffer[] {
