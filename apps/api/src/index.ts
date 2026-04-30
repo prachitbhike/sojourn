@@ -17,7 +17,9 @@ if (env.MIGRATE_ON_BOOT) {
 await sweepStuckPending(db, logger);
 
 const stubBaseUrl = resolveStubBaseUrl();
-const generators = buildGeneratorRegistry(stubBaseUrl);
+const generators = buildGeneratorRegistry(stubBaseUrl, {
+  defaultSpriteGenerator: env.SPRITE_GENERATOR,
+});
 
 const app = createApp({
   db,
