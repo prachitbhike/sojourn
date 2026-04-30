@@ -32,6 +32,8 @@ const app = createApp({
   nodeEnv: env.NODE_ENV,
   defaultPortraitGenerator: env.PORTRAIT_GENERATOR,
   defaultSpriteGenerator: env.SPRITE_GENERATOR,
+  assetPublicBaseUrl: env.R2_PUBLIC_BASE_URL ?? null,
+  referenceUploadMaxBytes: env.REFERENCE_UPLOAD_MAX_BYTES,
 });
 
 const port = env.PORT;

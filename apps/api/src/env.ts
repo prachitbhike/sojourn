@@ -78,6 +78,17 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
+const REFERENCE_UPLOAD_MAX_BYTES_DEFAULT = 8 * 1024 * 1024; // 8 MiB
+
+function parseReferenceUploadMaxBytes(value: string | undefined): number {
+  if (value === undefined || value === '') return REFERENCE_UPLOAD_MAX_BYTES_DEFAULT;
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`REFERENCE_UPLOAD_MAX_BYTES must be a positive integer (got: "${value}")`);
+  }
+  return n;
+}
+
 function parseEditKeyPepper(value: string | undefined, nodeEnv: string): string {
   const pepper = value ?? '';
   if (pepper === '') {
@@ -105,6 +116,9 @@ export const env = {
   LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
   PORTRAIT_GENERATOR: parsePortraitGenerator(process.env.PORTRAIT_GENERATOR),
   SPRITE_GENERATOR: parseSpriteGenerator(process.env.SPRITE_GENERATOR),
+  REFERENCE_UPLOAD_MAX_BYTES: parseReferenceUploadMaxBytes(
+    process.env.REFERENCE_UPLOAD_MAX_BYTES,
+  ),
 };
 
 export const isDev = env.NODE_ENV !== 'production';

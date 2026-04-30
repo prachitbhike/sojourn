@@ -7,6 +7,7 @@ import { buildGeneratorRegistry } from '../src/generators.js';
 import { createLogger } from '../src/logger.js';
 import { createBackgroundTracker, type BackgroundTracker } from '../src/background.js';
 import type { DB } from '../src/db/client.js';
+import type { RateLimiter } from '../src/routes/uploads.js';
 import type {
   GeneratorRegistry,
   PortraitGeneratorId,
@@ -36,6 +37,9 @@ export type SetupOptions = {
   stubBaseUrl?: string;
   defaultPortraitGenerator?: PortraitGeneratorId;
   defaultSpriteGenerator?: SpriteGeneratorId;
+  assetPublicBaseUrl?: string | null;
+  referenceUploadMaxBytes?: number;
+  uploadsRateLimiter?: RateLimiter;
 };
 
 export async function setupTestApp(options: SetupOptions = {}): Promise<TestContext> {
@@ -61,6 +65,12 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestCont
     defaultPortraitGenerator: options.defaultPortraitGenerator ?? 'stub',
     defaultSpriteGenerator: options.defaultSpriteGenerator ?? 'stub',
     background,
+    assetPublicBaseUrl:
+      options.assetPublicBaseUrl !== undefined
+        ? options.assetPublicBaseUrl
+        : 'https://assets.test.sojourn.app',
+    referenceUploadMaxBytes: options.referenceUploadMaxBytes ?? 8 * 1024 * 1024,
+    uploadsRateLimiter: options.uploadsRateLimiter,
   });
 
   return {
