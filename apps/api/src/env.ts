@@ -62,7 +62,9 @@ function parsePortraitGenerator(value: string | undefined): PortraitGeneratorId 
 }
 
 function parseSpriteGenerator(value: string | undefined): SpriteGeneratorId {
-  const v = value ?? 'stub';
+  // Default to the real pixellab generator now that Slice 2 has shipped.
+  // Tests / CI / offline-dev still set SPRITE_GENERATOR=stub explicitly.
+  const v = value ?? 'pixellab';
   if (!(SPRITE_GENERATOR_IDS as readonly string[]).includes(v)) {
     throw new Error(
       `SPRITE_GENERATOR must be one of: ${SPRITE_GENERATOR_IDS.join(', ')} (got: "${v}")`,

@@ -21,10 +21,12 @@
     "@aws-sdk/client-s3": "^3.726.1",
     "@aws-sdk/s3-presigned-post": "^3.726.1",
     "@google/genai": "^1.51.0",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.36.4",
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
+    "@types/pngjs": "^6.0.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }
