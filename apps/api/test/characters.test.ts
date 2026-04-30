@@ -60,6 +60,94 @@ describe('character lifecycle', () => {
     expect(body.message).toContain('4000');
   });
 
+  it('POST /characters accepts a refImageUrl on the asset host and persists it', async () => {
+    const ctx = await setupTestApp();
+    const refImageUrl = 'https://assets.test.sojourn.app/uploads/refs/abc123.png';
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'a brave knight', refImageUrl }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      character: { slug: string; refImageUrl: string | null };
+    };
+    expect(body.character.refImageUrl).toBe(refImageUrl);
+
+    const get = await ctx.fetch(`/api/characters/${body.character.slug}`);
+    const getBody = (await get.json()) as { character: { refImageUrl: string | null } };
+    expect(getBody.character.refImageUrl).toBe(refImageUrl);
+  });
+
+  it('POST /characters rejects refImageUrl on a foreign host with 400', async () => {
+    const ctx = await setupTestApp();
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'a brave knight',
+        refImageUrl: 'https://attacker.example.com/evil.png',
+      }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('bad_request');
+  });
+
+  it('POST /characters rejects refImageUrl with non-https schemes', async () => {
+    const ctx = await setupTestApp();
+    for (const url of [
+      'javascript:alert(1)',
+      'data:image/png;base64,AAAA',
+      'http://assets.test.sojourn.app/uploads/refs/abc.png',
+      'file:///etc/passwd',
+      'not a url',
+    ]) {
+      const response = await ctx.fetch('/api/characters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'p', refImageUrl: url }),
+      });
+      expect(response.status, `url=${url}`).toBe(400);
+    }
+  });
+
+  it('POST /characters rejects non-string refImageUrl with 400', async () => {
+    const ctx = await setupTestApp();
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'p', refImageUrl: 42 }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('POST /characters rejects prefix-attack refImageUrl (foreign host that starts with the asset host string)', async () => {
+    const ctx = await setupTestApp();
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'p',
+        refImageUrl: 'https://assets.test.sojourn.app.attacker.com/x.png',
+      }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it('POST /characters rejects refImageUrl when asset host is not configured', async () => {
+    const ctx = await setupTestApp({ assetPublicBaseUrl: null });
+    const response = await ctx.fetch('/api/characters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'p',
+        refImageUrl: 'https://assets.test.sojourn.app/uploads/refs/abc.png',
+      }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   it('PATCH merges attributes rather than replacing them', async () => {
     const ctx = await setupTestApp();
     const { slug, editKey } = await createCharacterFor(ctx);

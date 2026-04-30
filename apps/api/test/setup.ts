@@ -37,6 +37,7 @@ export type SetupOptions = {
   stubBaseUrl?: string;
   defaultPortraitGenerator?: PortraitGeneratorId;
   defaultSpriteGenerator?: SpriteGeneratorId;
+  assetPublicBaseUrl?: string | null;
   referenceUploadMaxBytes?: number;
   uploadsRateLimiter?: RateLimiter;
 };
@@ -64,6 +65,10 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestCont
     defaultPortraitGenerator: options.defaultPortraitGenerator ?? 'stub',
     defaultSpriteGenerator: options.defaultSpriteGenerator ?? 'stub',
     background,
+    assetPublicBaseUrl:
+      options.assetPublicBaseUrl !== undefined
+        ? options.assetPublicBaseUrl
+        : 'https://assets.test.sojourn.app',
     referenceUploadMaxBytes: options.referenceUploadMaxBytes ?? 8 * 1024 * 1024,
     uploadsRateLimiter: options.uploadsRateLimiter,
   });

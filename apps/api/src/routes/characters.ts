@@ -55,6 +55,7 @@ export type RoutesDeps = {
   defaultPortraitGenerator: PortraitGeneratorId;
   defaultSpriteGenerator: SpriteGeneratorId;
   background: BackgroundTracker;
+  assetPublicBaseUrl: string | null;
 };
 
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -156,6 +157,18 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       if (typeof refImageUrlRaw !== 'string') {
         return c.json(
           { error: 'bad_request', message: 'refImageUrl must be a string' },
+          400,
+        );
+      }
+      // Confine refImageUrl to the configured asset host so a client can't
+      // smuggle arbitrary URLs (javascript:, third-party hosts, internal IPs)
+      // into the persisted row or the generator inputs.
+      if (!isAllowedRefImageUrl(refImageUrlRaw, deps.assetPublicBaseUrl)) {
+        return c.json(
+          {
+            error: 'bad_request',
+            message: 'refImageUrl must be an https URL on the configured asset host',
+          },
           400,
         );
       }
@@ -528,6 +541,26 @@ function serializeError(err: unknown): Record<string, unknown> {
     return { name: err.name, message: err.message, stack: err.stack };
   }
   return { value: String(err) };
+}
+
+function isAllowedRefImageUrl(
+  candidate: string,
+  assetPublicBaseUrl: string | null,
+): boolean {
+  if (!assetPublicBaseUrl) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+  const normalized = assetPublicBaseUrl.endsWith('/')
+    ? assetPublicBaseUrl.slice(0, -1)
+    : assetPublicBaseUrl;
+  // Trailing slash forces a path boundary, blocking
+  // `https://assets.example.com.attacker.com/...` style prefix attacks.
+  return candidate.startsWith(`${normalized}/`);
 }
 
 function toCharacterDto(row: typeof schema.characters.$inferSelect): CharacterDto {

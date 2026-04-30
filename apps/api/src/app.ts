@@ -25,6 +25,7 @@ export type AppDeps = {
   defaultPortraitGenerator: PortraitGeneratorId;
   defaultSpriteGenerator: SpriteGeneratorId;
   background?: BackgroundTracker;
+  assetPublicBaseUrl: string | null;
   referenceUploadMaxBytes: number;
   uploadsRateLimiter?: RateLimiter;
 };
@@ -79,6 +80,7 @@ export function createApp(deps: AppDeps) {
       defaultPortraitGenerator: deps.defaultPortraitGenerator,
       defaultSpriteGenerator: deps.defaultSpriteGenerator,
       background,
+      assetPublicBaseUrl: deps.assetPublicBaseUrl,
     }),
   );
 
