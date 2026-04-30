@@ -48,7 +48,7 @@ const SPRITE_GENERATOR_IDS = ['stub', 'pixellab'] as const;
 type SpriteGeneratorId = (typeof SPRITE_GENERATOR_IDS)[number];
 
 function parsePortraitGenerator(value: string | undefined): PortraitGeneratorId {
-  const v = value ?? 'stub';
+  const v = value ?? 'nano-banana';
   if (!(PORTRAIT_GENERATOR_IDS as readonly string[]).includes(v)) {
     throw new Error(
       `PORTRAIT_GENERATOR must be one of: ${PORTRAIT_GENERATOR_IDS.join(', ')} (got: "${v}")`,
