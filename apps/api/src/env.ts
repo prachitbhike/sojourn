@@ -48,6 +48,10 @@ const SPRITE_GENERATOR_IDS = ['stub', 'pixellab'] as const;
 type SpriteGeneratorId = (typeof SPRITE_GENERATOR_IDS)[number];
 
 function parsePortraitGenerator(value: string | undefined): PortraitGeneratorId {
+  // Default stays `stub` until apps/api/src/generators.ts wires the lazy
+  // nano-banana entry into buildGeneratorRegistry. Flipping this default
+  // before then would 500 on first portrait dispatch with
+  // `No portrait generator registered for id "nano-banana"`.
   const v = value ?? 'stub';
   if (!(PORTRAIT_GENERATOR_IDS as readonly string[]).includes(v)) {
     throw new Error(

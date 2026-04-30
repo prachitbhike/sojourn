@@ -7,7 +7,7 @@
 // Each factory reads its own env vars internally, validates the minimum it
 // needs, and returns a generator whose `id` matches the registry key.
 
-import type { SpriteGenerator } from './types.js';
+import type { PortraitGenerator, SpriteGenerator } from './types.js';
 import {
   createPixelLabSpriteGenerator,
   type PixelLabConfig,
@@ -29,4 +29,23 @@ export function createPixelLabFromEnv(
     apiBase,
     ...overrides,
   });
+}
+
+// Nano-banana uses a dynamic import + cached in-flight Promise so the
+// `@google/genai` SDK stays out of the boot graph for `PORTRAIT_GENERATOR=stub`
+// deployments. Two concurrent first calls share a single import + factory.
+
+let nanoBananaPortraitPromise: Promise<PortraitGenerator> | null = null;
+
+export function getNanoBananaPortraitGenerator(): Promise<PortraitGenerator> {
+  if (!nanoBananaPortraitPromise) {
+    nanoBananaPortraitPromise = import('./nano-banana/index.js').then((mod) =>
+      mod.createNanoBananaPortraitGenerator(),
+    );
+  }
+  return nanoBananaPortraitPromise;
+}
+
+export function resetNanoBananaPortraitCache(): void {
+  nanoBananaPortraitPromise = null;
 }
