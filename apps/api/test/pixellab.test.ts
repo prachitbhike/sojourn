@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createPixelLabSpriteGenerator,
   PixelLabGeneratorError,
+  type PixelLabUploader,
 } from '@sojourn/shared/generators';
 
 const REF_IMAGE_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -276,6 +277,45 @@ describe('createPixelLabSpriteGenerator — failure mapping', () => {
     });
   });
 
+  it('maps a non-OK reference image fetch into kind=provider (retryable)', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const target = typeof url === 'string' ? url : url.toString();
+      if (target === baseInput.refImageUrl) {
+        return new Response('not found', { status: 503 });
+      }
+      throw new Error('PixelLab should not be called when ref fetch fails');
+    });
+    const uploader = vi.fn();
+    const gen = createPixelLabSpriteGenerator({
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      uploader,
+    });
+    await expect(gen.generatePose({ ...baseInput, poseName: 'idle' })).rejects.toMatchObject({
+      kind: 'provider',
+      status: 503,
+    });
+    expect(uploader).not.toHaveBeenCalled();
+  });
+
+  it('maps a network-error reference image fetch into kind=provider', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const target = typeof url === 'string' ? url : url.toString();
+      if (target === baseInput.refImageUrl) {
+        throw new Error('ECONNRESET');
+      }
+      throw new Error('PixelLab should not be called when ref fetch fails');
+    });
+    const gen = createPixelLabSpriteGenerator({
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      uploader: vi.fn(),
+    });
+    await expect(gen.generatePose({ ...baseInput, poseName: 'idle' })).rejects.toMatchObject({
+      kind: 'provider',
+    });
+  });
+
   it('does not call the uploader when generation fails', async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
       const target = typeof url === 'string' ? url : url.toString();
@@ -292,6 +332,76 @@ describe('createPixelLabSpriteGenerator — failure mapping', () => {
       PixelLabGeneratorError,
     );
     expect(uploader).not.toHaveBeenCalled();
+  });
+});
+
+describe('createPixelLabSpriteGenerator — frame size mismatch', () => {
+  it('clips oversized frames and pads undersized frames into uniform 64x64 cells', async () => {
+    // Frame 0: 80x80 (oversized → clipped). Mark pixel (60,0) red, (70,0) green
+    // so we can confirm only the (60,0) red survives in the sheet.
+    const oversized = new PNG({ width: 80, height: 80 });
+    oversized.data.fill(0);
+    const setPixel = (png: PNG, x: number, y: number, r: number, g: number, b: number, a: number) => {
+      const idx = (y * png.width + x) * 4;
+      png.data[idx] = r;
+      png.data[idx + 1] = g;
+      png.data[idx + 2] = b;
+      png.data[idx + 3] = a;
+    };
+    setPixel(oversized, 60, 0, 255, 0, 0, 255);
+    setPixel(oversized, 70, 0, 0, 255, 0, 255); // outside the 64x64 cell — must be dropped
+    const oversizedB64 = PNG.sync.write(oversized).toString('base64');
+
+    // Frame 1: 32x32 (undersized → padded with transparent). Mark pixel (10,10).
+    const undersized = new PNG({ width: 32, height: 32 });
+    undersized.data.fill(0);
+    setPixel(undersized, 10, 10, 0, 0, 255, 255);
+    const undersizedB64 = PNG.sync.write(undersized).toString('base64');
+
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const target = typeof url === 'string' ? url : url.toString();
+      if (target === baseInput.refImageUrl) return refFetch();
+      return jsonResponse({
+        images: [
+          { type: 'base64', base64: oversizedB64, format: 'png' },
+          { type: 'base64', base64: undersizedB64, format: 'png' },
+        ],
+        usage: { type: 'usd', usd: 0 },
+      });
+    });
+    let captured: Buffer | null = null;
+    const uploader = vi.fn(async (_key: string, body: Buffer) => {
+      captured = body;
+      return 'https://r2.test/sheet.png';
+    });
+    const gen = createPixelLabSpriteGenerator({
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      uploader: uploader as unknown as PixelLabUploader,
+    });
+
+    await gen.generatePose({ ...baseInput, poseName: 'idle' });
+    expect(captured).not.toBeNull();
+    const sheet = PNG.sync.read(captured!);
+    expect(sheet.width).toBe(64 * 2);
+    expect(sheet.height).toBe(64);
+
+    const pixelAt = (x: number, y: number) => {
+      const idx = (y * sheet.width + x) * 4;
+      return [sheet.data[idx], sheet.data[idx + 1], sheet.data[idx + 2], sheet.data[idx + 3]];
+    };
+
+    // Frame 0 cell starts at x=0. The (60,0) red pixel should survive.
+    expect(pixelAt(60, 0)).toEqual([255, 0, 0, 255]);
+    // The (70,0) green pixel was outside the 64x64 cell — it must be transparent
+    // in frame 1's column (cell starts at x=64), not bleeding into the sheet.
+    expect(pixelAt(70, 0)).toEqual([0, 0, 0, 0]);
+
+    // Frame 1 cell starts at x=64. The (10,10) blue pixel of the 32x32 source
+    // lands at sheet (74,10). Beyond the source's 32x32 footprint we expect
+    // transparent padding.
+    expect(pixelAt(74, 10)).toEqual([0, 0, 255, 255]);
+    expect(pixelAt(64 + 40, 40)).toEqual([0, 0, 0, 0]); // padded region
   });
 });
 

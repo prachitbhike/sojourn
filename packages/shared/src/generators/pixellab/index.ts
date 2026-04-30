@@ -77,6 +77,12 @@ export function createPixelLabSpriteGenerator(config: PixelLabConfig): SpriteGen
     id: 'pixellab',
     async generatePose(input: PoseGenerationInput): Promise<PoseGenerationResult> {
       const defaults = POSE_DEFAULTS[input.poseName];
+      if (!defaults) {
+        throw new PixelLabGeneratorError({
+          kind: 'malformed',
+          message: `pixellab generator has no defaults for pose "${input.poseName}"`,
+        });
+      }
       const referenceBase64 = input.refImageUrl
         ? await fetchReferenceAsBase64(input.refImageUrl, fetchImpl, timeoutMs)
         : null;
@@ -232,15 +238,7 @@ function parseFrames(body: unknown): Buffer[] {
         message: 'pixellab frame missing base64 payload',
       });
     }
-    let buf: Buffer;
-    try {
-      buf = Buffer.from(b64, 'base64');
-    } catch {
-      throw new PixelLabGeneratorError({
-        kind: 'malformed',
-        message: 'pixellab frame base64 was unparseable',
-      });
-    }
+    const buf = Buffer.from(b64, 'base64');
     if (buf.byteLength === 0) {
       throw new PixelLabGeneratorError({
         kind: 'malformed',
@@ -299,6 +297,11 @@ function composeSpriteSheet(
   return PNG.sync.write(sheet);
 }
 
+// Reference fetches hit R2 (or whatever storage backs the portrait URL), not
+// PixelLab. We classify their failures as `provider` so the Slice 1 handler
+// treats them as retryable transient issues rather than terminal `malformed`
+// data — a 503 or DNS blip on R2 is an infrastructure problem, not a bad
+// payload.
 async function fetchReferenceAsBase64(
   url: string,
   fetchImpl: typeof fetch,
@@ -310,8 +313,9 @@ async function fetchReferenceAsBase64(
     const response = await fetchImpl(url, { signal: controller.signal });
     if (!response.ok) {
       throw new PixelLabGeneratorError({
-        kind: 'malformed',
+        kind: 'provider',
         message: `reference image fetch returned HTTP ${response.status}`,
+        status: response.status,
       });
     }
     const arrayBuffer = await response.arrayBuffer();
@@ -325,7 +329,7 @@ async function fetchReferenceAsBase64(
       });
     }
     throw new PixelLabGeneratorError({
-      kind: 'malformed',
+      kind: 'provider',
       message: `reference image fetch failed: ${errorMessage(err)}`,
     });
   } finally {
