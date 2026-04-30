@@ -119,13 +119,28 @@ describe('createPixelLabSpriteGenerator — success path', () => {
     expect(sheet.height).toBe(64);
   });
 
-  it('skips reference_image when refImageUrl is null', async () => {
+  it('synthesizes a reference via pixflux when refImageUrl is null', async () => {
+    // PixelLab's /animate-with-text requires reference_image. When the caller
+    // doesn't supply one we must generate a pixel-art reference first via
+    // /generate-image-pixflux and feed it forward as the reference.
+    const pixfluxImageB64 = makeFramePng();
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(typeof url === 'string' ? url : url.toString()).toBe(
-        'https://api.pixellab.ai/v1/animate-with-text',
-      );
+      const target = typeof url === 'string' ? url : url.toString();
+      if (target === 'https://api.pixellab.ai/v1/generate-image-pixflux') {
+        const body = JSON.parse(init!.body as string);
+        expect(body.image_size).toEqual({ width: 64, height: 64 });
+        expect(body.description).toContain('a brave knight');
+        return jsonResponse({
+          image: { type: 'base64', base64: pixfluxImageB64 },
+          usage: { type: 'usd', usd: 0.005 },
+        });
+      }
+      expect(target).toBe('https://api.pixellab.ai/v1/animate-with-text');
       const body = JSON.parse(init!.body as string);
-      expect(body.reference_image).toBeUndefined();
+      expect(body.reference_image).toEqual({
+        type: 'base64',
+        base64: pixfluxImageB64,
+      });
       return jsonResponse(pixelLabResponseWithFrames(4));
     });
     const uploader = vi.fn().mockResolvedValue('https://r2.test/sheet.png');
@@ -135,7 +150,27 @@ describe('createPixelLabSpriteGenerator — success path', () => {
       uploader,
     });
     await gen.generatePose({ ...baseInput, poseName: 'idle', refImageUrl: null });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates pixflux failures as a PixelLabGeneratorError without calling animate-with-text', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const target = typeof url === 'string' ? url : url.toString();
+      if (target === 'https://api.pixellab.ai/v1/generate-image-pixflux') {
+        return new Response('upstream broke', { status: 502 });
+      }
+      throw new Error('animate-with-text should not be called when pixflux fails');
+    });
+    const uploader = vi.fn();
+    const gen = createPixelLabSpriteGenerator({
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      uploader,
+    });
+    await expect(
+      gen.generatePose({ ...baseInput, poseName: 'idle', refImageUrl: null }),
+    ).rejects.toMatchObject({ kind: 'provider', status: 502 });
+    expect(uploader).not.toHaveBeenCalled();
   });
 });
 
