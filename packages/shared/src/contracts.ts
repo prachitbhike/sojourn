@@ -34,7 +34,20 @@ export type PoseDto = {
   updatedAt: number;
 };
 
-export type CreateCharacterRequest = { prompt: string };
+export type CreateCharacterRequest = { prompt: string; refImageUrl?: string };
+
+// Two-step reference-image upload. Client POSTs to /api/uploads/reference for
+// a slot, then POSTs the image bytes directly to R2 via `uploadUrl` as a
+// multipart/form-data body containing every entry in `fields` plus the file
+// as the final `file` field. Once the upload completes, the client passes
+// `refImageUrl` back to POST /api/characters.
+export type UploadReferenceRequest = { contentType: string };
+
+export type UploadReferenceResponse = {
+  uploadUrl: string;
+  fields: Record<string, string>;
+  refImageUrl: string;
+};
 
 export type CreateCharacterResponse = {
   character: CharacterDto;

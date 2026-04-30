@@ -30,6 +30,7 @@ const app = createApp({
   nodeEnv: env.NODE_ENV,
   defaultPortraitGenerator: env.PORTRAIT_GENERATOR,
   defaultSpriteGenerator: env.SPRITE_GENERATOR,
+  referenceUploadMaxBytes: env.REFERENCE_UPLOAD_MAX_BYTES,
 });
 
 const port = env.PORT;

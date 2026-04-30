@@ -10,6 +10,7 @@ import type {
 import type { DB } from './db/client.js';
 import type { Logger } from './logger.js';
 import { createCharacterRoutes } from './routes/characters.js';
+import { createUploadsRoutes, type RateLimiter } from './routes/uploads.js';
 import { createBackgroundTracker, type BackgroundTracker } from './background.js';
 
 export type AppDeps = {
@@ -24,6 +25,8 @@ export type AppDeps = {
   defaultPortraitGenerator: PortraitGeneratorId;
   defaultSpriteGenerator: SpriteGeneratorId;
   background?: BackgroundTracker;
+  referenceUploadMaxBytes: number;
+  uploadsRateLimiter?: RateLimiter;
 };
 
 export type App = ReturnType<typeof createApp>;
@@ -76,6 +79,15 @@ export function createApp(deps: AppDeps) {
       defaultPortraitGenerator: deps.defaultPortraitGenerator,
       defaultSpriteGenerator: deps.defaultSpriteGenerator,
       background,
+    }),
+  );
+
+  app.route(
+    '/api/uploads',
+    createUploadsRoutes({
+      logger: deps.logger,
+      maxBytes: deps.referenceUploadMaxBytes,
+      rateLimiter: deps.uploadsRateLimiter,
     }),
   );
 

@@ -6,6 +6,7 @@ import type {
   PatchCharacterRequest,
   PatchCharacterResponse,
   PoseName,
+  UploadReferenceResponse,
 } from '@sojourn/shared';
 
 export type AuthCtx = { editKey: string | null };
@@ -62,11 +63,44 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-export function createCharacter(prompt: string): Promise<CreateCharacterResponse> {
+export function createCharacter(
+  prompt: string,
+  refImageUrl?: string,
+): Promise<CreateCharacterResponse> {
   return request<CreateCharacterResponse>('/api/characters', {
     method: 'POST',
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(refImageUrl ? { prompt, refImageUrl } : { prompt }),
   });
+}
+
+export function requestReferenceUploadSlot(
+  contentType: string,
+): Promise<UploadReferenceResponse> {
+  return request<UploadReferenceResponse>('/api/uploads/reference', {
+    method: 'POST',
+    body: JSON.stringify({ contentType }),
+  });
+}
+
+export async function uploadReferenceImage(file: File): Promise<string> {
+  const slot = await requestReferenceUploadSlot(file.type);
+  const form = new FormData();
+  for (const [k, v] of Object.entries(slot.fields)) {
+    form.append(k, v);
+  }
+  // The file must be appended last — R2 (S3-compatible) reads policy fields up
+  // to the first file field, so anything after `file` is ignored.
+  form.append('file', file);
+  let res: Response;
+  try {
+    res = await fetch(slot.uploadUrl, { method: 'POST', body: form });
+  } catch (err) {
+    throw new ApiError(0, 'network', err instanceof Error ? err.message : 'upload failed');
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, 'upload_failed', `upload failed (${res.status})`);
+  }
+  return slot.refImageUrl;
 }
 
 export function getCharacter(slug: string): Promise<GetCharacterResponse> {

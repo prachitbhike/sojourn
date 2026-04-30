@@ -147,6 +147,21 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       );
     }
 
+    const refImageUrlRaw =
+      body && typeof body === 'object' && 'refImageUrl' in body
+        ? (body as { refImageUrl: unknown }).refImageUrl
+        : undefined;
+    let refImageUrl: string | null = null;
+    if (refImageUrlRaw !== undefined && refImageUrlRaw !== null && refImageUrlRaw !== '') {
+      if (typeof refImageUrlRaw !== 'string') {
+        return c.json(
+          { error: 'bad_request', message: 'refImageUrl must be a string' },
+          400,
+        );
+      }
+      refImageUrl = refImageUrlRaw;
+    }
+
     const id = generateRowId();
     const editKey = generateEditKey();
     const editKeyHash = hashEditKey(editKey, deps.pepper);
@@ -162,6 +177,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
           editKeyHash,
           name,
           basePrompt: prompt,
+          refImageUrl,
           attributes: {},
           portraitGenerator: deps.defaultPortraitGenerator,
         });
@@ -179,6 +195,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       slug,
       prompt,
       attributes: {},
+      refImageUrl,
     });
 
     await deps.db
@@ -198,6 +215,7 @@ export function createCharacterRoutes(deps: RoutesDeps): Hono {
       poseName: 'idle',
       prompt,
       attributes: {},
+      refImageUrl,
     });
 
     await deps.db.insert(schema.poses).values({
