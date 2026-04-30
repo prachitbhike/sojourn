@@ -141,6 +141,31 @@ describe('nano-banana PortraitGenerator', () => {
         }),
       );
     });
+
+    it('derives the R2 key extension from the returned MIME type (jpeg)', async () => {
+      mocks.generateContent.mockResolvedValue(geminiOk(PNG_BYTES_BASE64, 'image/jpeg'));
+
+      const gen = createNanoBananaPortraitGenerator({
+        now: () => new Date(1_700_000_000_000),
+      });
+
+      const result = await gen.generatePortrait({
+        characterId: 'c1',
+        slug: 'kira',
+        prompt: 'x',
+        attributes: {},
+      });
+
+      expect(result.url).toBe(
+        'https://assets.test.sojourn.app/characters/kira/portrait-1700000000000.jpg',
+      );
+      expect(mocks.PutObjectCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Key: 'characters/kira/portrait-1700000000000.jpg',
+          ContentType: 'image/jpeg',
+        }),
+      );
+    });
   });
 
   describe('prompt + refImageUrl path (multi-image fusion)', () => {
@@ -277,6 +302,25 @@ describe('nano-banana PortraitGenerator', () => {
           attributes: {},
         }),
       ).rejects.toMatchObject({ kind: 'malformed' });
+      expect(mocks.send).not.toHaveBeenCalled();
+    });
+
+    it('maps an inlineData with empty base64 data to { kind: "malformed" } and never uploads', async () => {
+      mocks.generateContent.mockResolvedValue({
+        candidates: [
+          { content: { parts: [{ inlineData: { mimeType: 'image/png', data: '' } }] } },
+        ],
+      });
+
+      const gen = createNanoBananaPortraitGenerator();
+      await expect(
+        gen.generatePortrait({
+          characterId: 'c1',
+          slug: 'kira',
+          prompt: 'x',
+          attributes: {},
+        }),
+      ).rejects.toMatchObject({ kind: 'malformed', message: 'no image bytes in response' });
       expect(mocks.send).not.toHaveBeenCalled();
     });
 

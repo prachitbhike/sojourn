@@ -69,7 +69,8 @@ export function createNanoBananaPortraitGenerator(
       const ai = getAi();
 
       const generated = await callWithTimeout(ai, { prompt, refImage }, timeoutMs);
-      const key = `characters/${input.slug}/portrait-${now().getTime()}.png`;
+      const ext = extensionForMimeType(generated.mimeType);
+      const key = `characters/${input.slug}/portrait-${now().getTime()}.${ext}`;
       const url = await uploadObject(key, generated.bytes, generated.mimeType);
 
       return { url, status: 'ready' };
@@ -194,6 +195,14 @@ function parseRetryAfter(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+function extensionForMimeType(mimeType: string): string {
+  const subtype = mimeType.toLowerCase().split('/')[1] ?? '';
+  if (subtype === 'jpeg' || subtype === 'jpg') return 'jpg';
+  if (subtype === 'png') return 'png';
+  if (subtype === 'webp') return 'webp';
+  return 'png';
 }
 
 function buildPrompt(prompt: string, attributes: CharacterAttributes): string {
