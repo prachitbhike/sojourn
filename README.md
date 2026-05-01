@@ -6,17 +6,23 @@ A web app for creating animatable pixel-art sprites with a chat- and inspector-d
 
 ## Status
 
-Phase 0 — *shareable skeleton with stub generators* — is complete. The full create → edit → share loop works end-to-end against canned assets. Real generators land in Phase 1.
+Phase 0 — *shareable skeleton with stub generators* — is complete. Phase 1 — *real generators + reference upload* — is mid-flight: the foundations, PixelLab sprite generator, nano-banana portrait generator, and reference-upload landing UX have merged; the editor's pending/failure UX and the Phase 1 E2E pass are still in flight.
 
-| Slice | What | State |
-|---|---|---|
-| 1 | pnpm workspace, Vite + Hono scaffold, Drizzle schema + migrations, stub fixtures | merged |
-| 2 | API endpoints, edit-key auth, generator seam (stub impl), pino logging | merged |
-| 3 | `<SpriteStage>` component + `/dev/stage` Phaser demo | merged |
-| 4 | Landing / editor / public viewer UI, inspector, pose grid | merged |
-| 5 | Playwright E2E happy-path, R2 stub-upload script, prod CORS | merged |
+| Phase | Slice | What | State |
+|---|---|---|---|
+| 0 | 1 | pnpm workspace, Vite + Hono scaffold, Drizzle schema + migrations, stub fixtures | merged |
+| 0 | 2 | API endpoints, edit-key auth, generator seam (stub impl), pino logging | merged |
+| 0 | 3 | `<SpriteStage>` component + `/dev/stage` Phaser demo | merged |
+| 0 | 4 | Landing / editor / public viewer UI, inspector, pose grid | merged |
+| 0 | 5 | Playwright E2E happy-path, R2 stub-upload script, prod CORS | merged |
+| 1 | 1 | `errorMessage` cols + daily-cap counters, async `/portrait` & `/poses` (202), 5-min startup sweep, R2 helper, provider env-var wiring | merged |
+| 1 | 2 | Real PixelLab `SpriteGenerator` with R2 upload + manifest translation; `SPRITE_GENERATOR=pixellab` is the default | merged |
+| 1 | 3 | Real nano banana `PortraitGenerator` (Gemini 2.5 Flash Image) with multi-image reference fusion; lazy registry entry | merged |
+| 1 | 4 | `POST /api/uploads/reference` presigned-PUT endpoint + landing drop-zone | merged |
+| 1 | 5 | Editor pending/failure UX, polling, 429 cap banner, rotate-key affordance | pending |
+| 1 | 6 | New Playwright tests (reference-upload, pending/failure), R2 CORS docs, deploy hardening | pending |
 
-All generators currently return canned placeholder assets. No real PixelLab / nano banana / ElevenLabs calls yet — wiring those up is Phase 1+. R2 is wired (`pnpm --filter api stubs:upload` pushes the stub catalog) but the dev server still serves stubs from disk by default.
+`SPRITE_GENERATOR` defaults to `pixellab` (real PixelLab). `PORTRAIT_GENERATOR` defaults to `stub` for now — the nano-banana entry is registered but not yet wired into the API's `buildGeneratorRegistry`; flip it on by setting `PORTRAIT_GENERATOR=nano-banana` once a `GEMINI_API_KEY` is available. Either generator can be forced to `stub` for offline dev.
 
 ## Tech stack
 
@@ -25,26 +31,27 @@ All generators currently return canned placeholder assets. No real PixelLab / na
 | Frontend | Vite + React + TS, Phaser sandboxed inside `<SpriteStage>` |
 | API | Node + Hono + TS |
 | DB | SQLite via Drizzle (Turso in prod, local file in dev) |
-| Asset storage | Cloudflare R2 (S3-compatible) |
-| Sprites | PixelLab (Phase 1+, stubbed in Phase 0) |
-| Portraits | nano banana / Gemini 2.5 Flash Image (Phase 1+, stubbed) |
+| Asset storage | Cloudflare R2 (S3-compatible), via `packages/shared/src/storage/r2.ts` |
+| Sprites | PixelLab (real, default in Phase 1); `stub` retained for offline dev |
+| Portraits | nano banana / Gemini 2.5 Flash Image (registered; wire-up flips default to `nano-banana` in Slice 5/6); `stub` retained |
 | Voice | ElevenLabs (Phase 2+) |
-| Hosting | Vercel (frontend) + Fly/Railway (API) — choice deferred |
+| Hosting | Railway single-service (API serves `apps/web/dist`); Fly/Vercel split deferred |
 
-The full stack rationale lives in [docs/phase-0-plan.md](docs/phase-0-plan.md); decisions log in [docs/decisions.md](docs/decisions.md).
+The full stack rationale lives in [docs/phase-0-plan.md](docs/phase-0-plan.md) and [docs/phase-1-plan.md](docs/phase-1-plan.md); decisions log in [docs/decisions.md](docs/decisions.md).
 
 ## Repo layout
 
 ```
 apps/
-  api/           Hono server, Drizzle migrations, stub fixtures, vitest
+  api/           Hono server, Drizzle migrations (0000 + 0001), stub fixtures, vitest
   web/           Vite + React + Phaser
 packages/
-  shared/        schema, contracts, pose vocabulary, generator interfaces
-docs/            phase-0-plan, decisions log, execution plan
+  shared/        schema, contracts, pose vocabulary, generator interfaces, R2 helper
+                 generators/{stub,pixellab,nano-banana}/, storage/r2.ts
+docs/            phase-0-plan, phase-1-plan, execution plans, decisions log
 ```
 
-`packages/shared` is the only cross-app boundary — both apps import schema and contract types from there. Ownership and sandbox rules (Phaser stays in `<SpriteStage>`; provider SDKs stay in `packages/shared/generators/<provider>/`) are spelled out in [AGENTS.md](AGENTS.md).
+`packages/shared` is the only cross-app boundary — both apps import schema and contract types from there. Ownership and sandbox rules (Phaser stays in `<SpriteStage>`; provider SDKs stay in `packages/shared/generators/<provider>/`; `@aws-sdk/client-s3` stays in `packages/shared/src/storage/r2.ts`) are spelled out in [AGENTS.md](AGENTS.md).
 
 ## Getting started
 
@@ -61,7 +68,11 @@ pnpm dev                             # boots web + api in parallel
 - API: <http://localhost:3000> (override with `PORT` in `.env.local`)
 - Phaser demo (component sandbox): <http://localhost:5173/dev/stage>
 
-`EDIT_KEY_PEPPER` is empty by default — the API logs a warning but still runs in dev. Set it in `.env.local` if you want hash parity with prod. R2 / PixelLab / Gemini / ElevenLabs keys can stay blank in Phase 0.
+`EDIT_KEY_PEPPER` is empty by default — the API logs a warning but still runs in dev. Set it in `.env.local` if you want hash parity with prod. With `PORTRAIT_GENERATOR=stub` and `SPRITE_GENERATOR=stub`, all provider / R2 keys can stay blank for offline dev. Otherwise:
+
+- `SPRITE_GENERATOR=pixellab` (the default) requires `PIXELLAB_API_KEY` plus the four `R2_*` vars (the generator uploads sprite sheets straight to R2).
+- `PORTRAIT_GENERATOR=nano-banana` requires `GEMINI_API_KEY` plus the same `R2_*` vars.
+- `POST /api/uploads/reference` (the landing-page drop-zone) issues presigned R2 PUT URLs and therefore needs `R2_*` configured before reference uploads work — set `*_GENERATOR=stub` *and* skip the drop-zone for fully-offline dev.
 
 ## Common commands
 
@@ -82,18 +93,23 @@ The canonical command list lives in [AGENTS.md](AGENTS.md#common-commands).
 
 ## API surface (current)
 
-Implemented in [apps/api/src/routes/characters.ts](apps/api/src/routes/characters.ts). All `/api/characters/*` mutating routes require auth.
+Implemented in [apps/api/src/routes/characters.ts](apps/api/src/routes/characters.ts) and [apps/api/src/routes/uploads.ts](apps/api/src/routes/uploads.ts). All `/api/characters/*` mutating routes require auth.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/health`, `/api/health` | — | liveness |
-| POST | `/api/characters` | — | creates character; auto-generates a stub portrait + idle pose; returns the `editKey` |
-| GET | `/api/characters/:slug` | — | public read |
+| POST | `/api/uploads/reference` | — | per-IP rate-limited; returns `{ uploadUrl, refImageUrl }` for direct R2 PUT |
+| POST | `/api/characters` | — | accepts `{ prompt, refImageUrl? }`; creates character + kicks off portrait + idle pose; returns the `editKey` |
+| GET | `/api/characters/:slug` | — | public read; the editor polls this every 2s while anything is `pending` |
 | PATCH | `/api/characters/:slug` | yes | update name / attributes |
-| POST | `/api/characters/:slug/portrait` | yes | regenerate portrait |
-| POST | `/api/characters/:slug/poses` | yes | body `{ name: 'idle' \| 'walk' \| 'attack' \| 'cast' }` |
+| POST | `/api/characters/:slug/portrait` | yes | 202 — async regeneration; row goes `pending → ready \| failed` |
+| POST | `/api/characters/:slug/poses` | yes | 202 — body `{ name: 'idle' \| 'walk' \| 'attack' \| 'cast' }`, async |
 | POST | `/api/characters/:slug/voice` | yes | stub — returns a fixed audio URL |
 | POST | `/api/characters/:slug/rotate-key` | yes | rotates `editKey`, refreshes cookie |
+
+**Async generation.** `POST /portrait` and `POST /poses` write `status: 'pending'` and return `202` immediately; the real generator runs in a background Promise and writes back `status: 'ready'` (with the asset URL) or `status: 'failed'` (with `errorMessage`). On boot, the API marks any `pending` row older than 5 minutes as `failed` so a process restart doesn't strand work.
+
+**Daily caps.** Per character, per UTC day: 50 portrait regens and 100 pose regens. Counters increment on attempt (failed real-API calls still cost money). Over-cap returns `429` with `Retry-After`. See [docs/phase-1-plan.md](docs/phase-1-plan.md#cost-guardrails).
 
 **Auth.** Pass either an `X-Edit-Key: <key>` header or the slug-namespaced `HttpOnly` cookie set on creation. The full URL/share model (slug shape, edit-key lifecycle, cookie scoping) is in [docs/phase-0-plan.md](docs/phase-0-plan.md).
 
@@ -151,12 +167,16 @@ Phase 0 ships as a **single Railway service**: the API serves `apps/web/dist` as
 | `NODE_ENV` | `production` | flips cookies to `SameSite=None; Secure` |
 | `DATABASE_URL` | `file:/data/sojourn.db` | path under the mounted volume |
 | `EDIT_KEY_PEPPER` | random 32+ bytes (hex) | API refuses to boot if empty |
-| `MIGRATE_ON_BOOT` | `1` | runs Drizzle migrations on startup |
+| `MIGRATE_ON_BOOT` | `1` | runs Drizzle migrations on startup (`0000` + `0001`) |
 | `STUB_SOURCE` | `local` | serves stubs from `apps/api/fixtures/stubs/v1/` |
 | `PORT` | (auto) | provided by Railway |
 | `LOG_LEVEL` | `info` | optional |
+| `PORTRAIT_GENERATOR` | `stub` (default) or `nano-banana` | `nano-banana` requires `GEMINI_API_KEY` + `R2_*` |
+| `SPRITE_GENERATOR` | `pixellab` (default) or `stub` | `pixellab` requires `PIXELLAB_API_KEY` + `R2_*` |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_PUBLIC_BASE_URL` | — | required whenever a real generator runs or the reference-upload endpoint is exposed |
+| `REFERENCE_UPLOAD_MAX_BYTES` | `8388608` | server-side cap baked into the presigned PUT policy |
 
-`CORS_ORIGIN` is **not** required while frontend + API share an origin. `R2_*` vars are unused with `STUB_SOURCE=local`.
+`CORS_ORIGIN` is **not** required while frontend + API share an origin. With every `*_GENERATOR=stub` and `STUB_SOURCE=local`, R2 / PixelLab / Gemini keys are unused — useful for a single-service smoke deploy.
 
 **Verify after deploy:**
 
@@ -171,9 +191,11 @@ If `/health` works but DB writes fail, the volume probably isn't attached. If `/
 ## Documentation index
 
 - [AGENTS.md](AGENTS.md) — agent / contributor conventions, ownership rules, recurring footguns
-- [docs/phase-0-plan.md](docs/phase-0-plan.md) — current phase spec: stack, data model, API, URL strategy, deliverables checklist
+- [docs/phase-0-plan.md](docs/phase-0-plan.md) — Phase 0 spec: stack, data model, API, URL strategy, deliverables checklist
+- [docs/phase-1-plan.md](docs/phase-1-plan.md) — Phase 1 spec: real generators, reference upload, async generation, cost caps
 - [docs/execution-plan.md](docs/execution-plan.md) — Phase 0 slice structure and per-slice acceptance criteria
-- [docs/decisions.md](docs/decisions.md) — running decisions log (D01–D15)
+- [docs/phase-1-execution-plan.md](docs/phase-1-execution-plan.md) — Phase 1 slicing, per-thread prompts, parallel-work hygiene
+- [docs/decisions.md](docs/decisions.md) — running decisions log
 
 ## Contributing
 
@@ -181,4 +203,4 @@ The hard rules — stay in your slice, don't change the data model or URL scheme
 
 ## License
 
-Private / unlicensed. No `LICENSE` file is included.
+[MIT](LICENSE) © Prachit Bhike.
